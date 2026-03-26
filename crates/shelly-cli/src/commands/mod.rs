@@ -3,6 +3,7 @@ pub mod daemon;
 pub mod exec;
 pub mod group;
 pub mod scp;
+pub mod tunnel;
 pub mod vault;
 
 use crate::client::{ClientError, DaemonClient};
@@ -30,6 +31,9 @@ pub async fn dispatch(command: &[String], extra_args: &[String]) -> Result<(), C
         ["group", "add"] => group::add().await,
         ["group", "edit"] => group::edit(extra_args).await,
         ["group", "rm"] => group::rm(extra_args).await,
+        ["tunnel", "create"] => tunnel::create(extra_args).await,
+        ["tunnel", "list"] => tunnel::list().await,
+        ["tunnel", "close"] => tunnel::close(extra_args).await,
         ["ssh"] => crate::commands::exec::ssh_interactive(extra_args).await,
         ["exec"] => exec::exec(extra_args).await,
         ["scp", "upload"] => scp::upload(extra_args).await,

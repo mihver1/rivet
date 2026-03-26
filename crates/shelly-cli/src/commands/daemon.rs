@@ -72,6 +72,7 @@ pub async fn status() -> Result<(), CliError> {
             println!("Status:   running");
             println!("Uptime:   {}s", status.uptime_secs);
             println!("Sessions: {}", status.active_sessions);
+            println!("Tunnels:  {}", status.active_tunnels);
             println!(
                 "Vault:    {}",
                 if status.vault_locked {

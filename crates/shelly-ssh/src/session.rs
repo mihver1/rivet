@@ -16,7 +16,7 @@ use crate::handler::ShellyHandler;
 /// Used for programmatic operations (exec, file transfer).
 /// Interactive sessions go through the system `ssh` binary instead.
 pub struct SshSession {
-    handle: Handle<ShellyHandler>,
+    handle: Arc<Handle<ShellyHandler>>,
     host: String,
     port: u16,
     username: String,
@@ -33,7 +33,7 @@ impl SshSession {
         // Build russh client config from connection options
         let config = build_config(conn);
 
-        let mut handle = client::connect(Arc::new(config), &*addr, ShellyHandler)
+        let mut handle = client::connect(Arc::new(config), &*addr, ShellyHandler::new())
             .await
             .map_err(|e| SshError::ConnectionFailed(format!("{addr}: {e}")))?;
 
@@ -45,7 +45,7 @@ impl SshSession {
             AuthOutcome::Success => {
                 info!(host = %conn.host, "SSH session established");
                 Ok(Self {
-                    handle,
+                    handle: Arc::new(handle),
                     host: conn.host.clone(),
                     port: conn.port,
                     username: conn.username.clone(),
@@ -72,7 +72,7 @@ impl SshSession {
 
         let config = build_config(conn);
 
-        let mut handle = client::connect_stream(Arc::new(config), stream, ShellyHandler)
+        let mut handle = client::connect_stream(Arc::new(config), stream, ShellyHandler::new())
             .await
             .map_err(|e| SshError::ConnectionFailed(format!("stream to {}:{}: {e}", conn.host, conn.port)))?;
 
@@ -84,7 +84,7 @@ impl SshSession {
             AuthOutcome::Success => {
                 info!(host = %conn.host, "SSH session established over stream");
                 Ok(Self {
-                    handle,
+                    handle: Arc::new(handle),
                     host: conn.host.clone(),
                     port: conn.port,
                     username: conn.username.clone(),
@@ -218,6 +218,11 @@ impl SshSession {
     /// Useful for advanced operations not directly exposed by SshSession.
     pub fn handle(&self) -> &Handle<ShellyHandler> {
         &self.handle
+    }
+
+    /// Get the handle wrapped in Arc for tunnel operations.
+    pub fn handle_arc(&self) -> Arc<Handle<ShellyHandler>> {
+        Arc::clone(&self.handle)
     }
 }
 

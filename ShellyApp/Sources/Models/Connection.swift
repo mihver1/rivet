@@ -162,11 +162,13 @@ struct VaultStatus: Codable {
 struct DaemonStatus: Codable {
     let uptimeSecs: UInt64
     let activeSessions: UInt32
+    let activeTunnels: UInt32
     let vaultLocked: Bool
 
     enum CodingKeys: String, CodingKey {
         case uptimeSecs = "uptime_secs"
         case activeSessions = "active_sessions"
+        case activeTunnels = "active_tunnels"
         case vaultLocked = "vault_locked"
     }
 }

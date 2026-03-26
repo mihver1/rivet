@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::connection::{AuthMethod, Connection, Group, SshOptions};
+use crate::connection::{AuthMethod, Connection, Group, SshOptions, TunnelSpec};
 
 // --- Paths ---
 
@@ -335,12 +335,42 @@ pub struct ScpResult {
     pub bytes_transferred: u64,
 }
 
+// --- Tunnel ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TunnelCreateParams {
+    /// Connection name or ID to tunnel through
+    pub connection_id: Option<Uuid>,
+    pub connection_name: Option<String>,
+    pub spec: TunnelSpec,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TunnelCreateResult {
+    pub id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TunnelInfo {
+    pub id: Uuid,
+    pub connection_id: Uuid,
+    pub connection_name: String,
+    pub spec: TunnelSpec,
+    pub active: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TunnelCloseParams {
+    pub id: Uuid,
+}
+
 // --- Daemon ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DaemonStatusResult {
     pub uptime_secs: u64,
     pub active_sessions: u32,
+    pub active_tunnels: u32,
     pub vault_locked: bool,
 }
 

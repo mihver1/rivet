@@ -41,6 +41,11 @@ pub async fn dispatch(
         "group.update" => handle_group_update(state, params).await,
         "group.delete" => handle_group_delete(state, params).await,
 
+        // Tunnel operations
+        "tunnel.create" => handle_tunnel_create(state, params).await,
+        "tunnel.list" => handle_tunnel_list(state).await,
+        "tunnel.close" => handle_tunnel_close(state, params).await,
+
         // SSH operations
         "ssh.exec" => handle_ssh_exec(state, params).await,
         "ssh.connect_info" => handle_ssh_connect_info(state, params).await,
@@ -91,6 +96,7 @@ async fn handle_daemon_status(state: &SharedState) -> Result<Value, JsonRpcError
     to_value(DaemonStatusResult {
         uptime_secs: state.uptime_secs(),
         active_sessions: state.active_session_count(),
+        active_tunnels: state.active_tunnel_count(),
         vault_locked: !state.is_vault_unlocked(),
     })
 }
@@ -153,6 +159,10 @@ async fn handle_vault_lock(state: &SharedState) -> Result<Value, JsonRpcError> {
     let mut state = state.write().await;
 
     if let Some(vault) = state.vault.take() {
+        // Close all tunnels
+        for (_id, tunnel) in state.tunnels.drain() {
+            tunnel.shutdown().await;
+        }
         // Close all SSH sessions
         for (_id, session) in state.sessions.drain() {
             let _ = session.disconnect().await;
@@ -497,6 +507,114 @@ fn find_group_by_name(
     vault
         .find_group_by_name(name)
         .map_err(to_rpc_error)
+}
+
+// --- Tunnels ---
+
+async fn handle_tunnel_create(
+    state: &SharedState,
+    params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    let p: TunnelCreateParams = parse_params(params)?;
+
+    // Resolve connection
+    let conn = {
+        let state = state.read().await;
+        let vault = state
+            .vault
+            .as_ref()
+            .ok_or_else(|| to_rpc_error(ShellyError::VaultLocked))?;
+
+        if let Some(id) = p.connection_id {
+            vault.load_connection(&id).map_err(to_rpc_error)?
+        } else if let Some(ref name) = p.connection_name {
+            find_connection_by_name(vault, name)?
+        } else {
+            return Err(JsonRpcError {
+                code: -32602,
+                message: "either 'connection_id' or 'connection_name' is required".into(),
+                data: None,
+            });
+        }
+    };
+
+    // Ensure SSH session exists
+    {
+        let mut state = state.write().await;
+        ensure_session(&mut state, &conn.id, &conn).await?;
+    }
+
+    // Start tunnel
+    let tunnel_handle = {
+        let state = state.read().await;
+        let session = state.sessions.get(&conn.id).unwrap();
+        let handle_arc = session.handle_arc();
+
+        shelly_ssh::tunnel::start_tunnel(handle_arc, conn.id, p.spec, None)
+            .map_err(|e| to_rpc_error(ShellyError::TunnelError(e.to_string())))?
+    };
+
+    let tunnel_id = tunnel_handle.id;
+
+    {
+        let mut state = state.write().await;
+        state.tunnels.insert(tunnel_id, tunnel_handle);
+    }
+
+    info!(id = %tunnel_id, connection = %conn.name, "tunnel created");
+    to_value(TunnelCreateResult { id: tunnel_id })
+}
+
+async fn handle_tunnel_list(state: &SharedState) -> Result<Value, JsonRpcError> {
+    let state = state.read().await;
+
+    let vault = state
+        .vault
+        .as_ref()
+        .ok_or_else(|| to_rpc_error(ShellyError::VaultLocked))?;
+
+    let mut tunnels = Vec::new();
+    for (_, tunnel) in &state.tunnels {
+        // Try to get connection name
+        let conn_name = vault
+            .load_connection(&tunnel.connection_id)
+            .map(|c| c.name)
+            .unwrap_or_else(|_| "unknown".into());
+
+        tunnels.push(TunnelInfo {
+            id: tunnel.id,
+            connection_id: tunnel.connection_id,
+            connection_name: conn_name,
+            spec: tunnel.spec.clone(),
+            active: !tunnel.is_finished(),
+        });
+    }
+
+    to_value(tunnels)
+}
+
+async fn handle_tunnel_close(
+    state: &SharedState,
+    params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    let p: TunnelCloseParams = parse_params(params)?;
+
+    let tunnel = {
+        let mut state = state.write().await;
+        state.tunnels.remove(&p.id)
+    };
+
+    if let Some(tunnel) = tunnel {
+        info!(id = %p.id, "closing tunnel");
+        tunnel.shutdown().await;
+        to_value(OkResult { ok: true })
+    } else {
+        Err(JsonRpcError {
+            code: -32015,
+            message: format!("tunnel not found: {}", p.id),
+            data: None,
+        })
+    }
 }
 
 // --- SSH ---

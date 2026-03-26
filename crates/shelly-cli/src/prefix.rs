@@ -91,6 +91,14 @@ pub fn build_command_tree() -> CommandNode {
         group.add_child(CommandNode::leaf("rm"));
     }
 
+    // tunnel
+    {
+        let tunnel = root.add_child(CommandNode::new("tunnel"));
+        tunnel.add_child(CommandNode::leaf("create"));
+        tunnel.add_child(CommandNode::leaf("list"));
+        tunnel.add_child(CommandNode::leaf("close"));
+    }
+
     // ssh
     {
         let ssh = root.add_child(CommandNode::new("ssh"));
@@ -358,6 +366,44 @@ mod tests {
         assert_eq!(
             resolve_prefix(&t, &["g", "a"]),
             Resolved::Match(vec!["group".into(), "add".into()])
+        );
+    }
+
+    #[test]
+    fn test_tunnel_create_prefix() {
+        let t = tree();
+        assert_eq!(
+            resolve_prefix(&t, &["t", "cr"]),
+            Resolved::Match(vec!["tunnel".into(), "create".into()])
+        );
+    }
+
+    #[test]
+    fn test_tunnel_c_ambiguous() {
+        let t = tree();
+        match resolve_prefix(&t, &["t", "c"]) {
+            Resolved::Ambiguous(options) => {
+                assert_eq!(options.len(), 2); // create, close
+            }
+            other => panic!("expected Ambiguous, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_tunnel_list_prefix() {
+        let t = tree();
+        assert_eq!(
+            resolve_prefix(&t, &["t", "l"]),
+            Resolved::Match(vec!["tunnel".into(), "list".into()])
+        );
+    }
+
+    #[test]
+    fn test_tunnel_close_prefix() {
+        let t = tree();
+        assert_eq!(
+            resolve_prefix(&t, &["tu", "cl"]),
+            Resolved::Match(vec!["tunnel".into(), "close".into()])
         );
     }
 

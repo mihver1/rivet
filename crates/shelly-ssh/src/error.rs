@@ -26,6 +26,9 @@ pub enum SshError {
     #[error("session is closed")]
     SessionClosed,
 
+    #[error("tunnel error: {0}")]
+    Tunnel(String),
+
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -39,6 +42,7 @@ impl From<SshError> for ShellyError {
             SshError::ConnectionFailed(_) | SshError::Protocol(_) => {
                 ShellyError::SshConnectionFailed(err.to_string())
             }
+            SshError::Tunnel(msg) => ShellyError::TunnelError(msg),
             SshError::Io(e) => ShellyError::IoError(e),
             other => ShellyError::SshConnectionFailed(other.to_string()),
         }

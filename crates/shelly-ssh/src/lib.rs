@@ -7,4 +7,4 @@ pub mod tunnel;
 
 pub use error::SshError;
 pub use session::{ExecResult, SshSession};
-pub use tunnel::TunnelSpec;
+pub use tunnel::{ForwardedChannel, TunnelHandle};

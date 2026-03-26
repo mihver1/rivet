@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
-use shelly_ssh::SshSession;
+use shelly_ssh::{SshSession, TunnelHandle};
 use shelly_vault::store::{UnlockedVault, VaultStore};
 use tokio::sync::RwLock;
 use uuid::Uuid;
@@ -18,6 +18,9 @@ pub struct DaemonState {
     /// Active SSH sessions, keyed by connection ID.
     pub sessions: HashMap<Uuid, SshSession>,
 
+    /// Active SSH tunnels, keyed by tunnel ID.
+    pub tunnels: HashMap<Uuid, TunnelHandle>,
+
     /// Daemon startup time for uptime calculation.
     pub started_at: Instant,
 }
@@ -32,6 +35,7 @@ impl DaemonState {
             vault_store: None,
             vault: None,
             sessions: HashMap::new(),
+            tunnels: HashMap::new(),
             started_at: Instant::now(),
         }
     }
@@ -56,6 +60,14 @@ impl DaemonState {
         self.sessions
             .values()
             .filter(|s| !s.is_closed())
+            .count() as u32
+    }
+
+    /// Get the count of active tunnels.
+    pub fn active_tunnel_count(&self) -> u32 {
+        self.tunnels
+            .values()
+            .filter(|t| !t.is_finished())
             .count() as u32
     }
 

@@ -47,6 +47,9 @@ pub enum ShellyError {
     #[error("duplicate group name: {0}")]
     DuplicateGroupName(String),
 
+    #[error("tunnel error: {0}")]
+    TunnelError(String),
+
     #[error("internal error: {0}")]
     InternalError(String),
 }
@@ -68,6 +71,7 @@ impl ShellyError {
             Self::DaemonNotRunning => -32012,
             Self::GroupNotFound(_) => -32013,
             Self::DuplicateGroupName(_) => -32014,
+            Self::TunnelError(_) => -32015,
             Self::IoError(_) => -32603,
             Self::InternalError(_) => -32603,
         }
