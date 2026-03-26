@@ -191,6 +191,28 @@ impl SshSession {
         &self.username
     }
 
+    /// Upload a local file to the remote host.
+    ///
+    /// Returns the number of bytes transferred.
+    pub async fn upload_file(
+        &self,
+        local_path: &std::path::Path,
+        remote_path: &str,
+    ) -> Result<u64, SshError> {
+        crate::transfer::upload_file(&self.handle, local_path, remote_path).await
+    }
+
+    /// Download a file from the remote host.
+    ///
+    /// Returns the number of bytes transferred.
+    pub async fn download_file(
+        &self,
+        remote_path: &str,
+        local_path: &std::path::Path,
+    ) -> Result<u64, SshError> {
+        crate::transfer::download_file(&self.handle, remote_path, local_path).await
+    }
+
     /// Get a reference to the underlying russh handle.
     ///
     /// Useful for advanced operations not directly exposed by SshSession.
