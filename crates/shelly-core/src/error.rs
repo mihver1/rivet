@@ -41,6 +41,12 @@ pub enum ShellyError {
     #[error("daemon is not running")]
     DaemonNotRunning,
 
+    #[error("group not found: {0}")]
+    GroupNotFound(String),
+
+    #[error("duplicate group name: {0}")]
+    DuplicateGroupName(String),
+
     #[error("internal error: {0}")]
     InternalError(String),
 }
@@ -60,6 +66,8 @@ impl ShellyError {
             Self::CryptoError(_) => -32010,
             Self::SerializationError(_) => -32011,
             Self::DaemonNotRunning => -32012,
+            Self::GroupNotFound(_) => -32013,
+            Self::DuplicateGroupName(_) => -32014,
             Self::IoError(_) => -32603,
             Self::InternalError(_) => -32603,
         }

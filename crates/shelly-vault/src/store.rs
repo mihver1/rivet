@@ -210,6 +210,14 @@ impl UnlockedVault {
         self.delete_entity("groups", id)
     }
 
+    pub fn find_group_by_name(&self, name: &str) -> Result<Group> {
+        let groups = self.list_groups()?;
+        groups
+            .into_iter()
+            .find(|g| g.name == name)
+            .ok_or_else(|| ShellyError::GroupNotFound(name.into()))
+    }
+
     // --- Password change ---
 
     pub fn change_password(&self, old_password: &str, new_password: &str) -> Result<()> {

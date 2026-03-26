@@ -1,6 +1,7 @@
 pub mod conn;
 pub mod daemon;
 pub mod exec;
+pub mod group;
 pub mod scp;
 pub mod vault;
 
@@ -24,6 +25,11 @@ pub async fn dispatch(command: &[String], extra_args: &[String]) -> Result<(), C
         ["conn", "edit"] => conn::edit(extra_args).await,
         ["conn", "rm"] => conn::rm(extra_args).await,
         ["conn", "import"] => conn::import(extra_args).await,
+        ["group", "list"] => group::list().await,
+        ["group", "show"] => group::show(extra_args).await,
+        ["group", "add"] => group::add().await,
+        ["group", "edit"] => group::edit(extra_args).await,
+        ["group", "rm"] => group::rm(extra_args).await,
         ["ssh"] => crate::commands::exec::ssh_interactive(extra_args).await,
         ["exec"] => exec::exec(extra_args).await,
         ["scp", "upload"] => scp::upload(extra_args).await,

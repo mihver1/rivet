@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::connection::{AuthMethod, Connection, SshOptions};
+use crate::connection::{AuthMethod, Connection, Group, SshOptions};
 
 // --- Paths ---
 
@@ -230,6 +230,61 @@ pub struct ConnImportResult {
     pub imported: u32,
 }
 
+// --- Group ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupListParams {}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupGetParams {
+    pub id: Option<Uuid>,
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupCreateParams {
+    pub name: String,
+    pub description: Option<String>,
+    pub color: Option<String>,
+}
+
+impl GroupCreateParams {
+    pub fn into_group(self) -> Group {
+        let mut g = Group::new(self.name);
+        g.description = self.description;
+        g.color = self.color;
+        g
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupUpdateParams {
+    pub id: Uuid,
+    pub name: Option<String>,
+    pub description: Option<Option<String>>,
+    pub color: Option<Option<String>>,
+}
+
+impl GroupUpdateParams {
+    pub fn apply_to(self, group: &mut Group) {
+        if let Some(name) = self.name {
+            group.name = name;
+        }
+        if let Some(description) = self.description {
+            group.description = description;
+        }
+        if let Some(color) = self.color {
+            group.color = color;
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupDeleteParams {
+    pub id: Option<Uuid>,
+    pub name: Option<String>,
+}
+
 // --- SSH ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -385,6 +440,61 @@ mod tests {
         let deserialized: SshExecResult = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.exit_code, 0);
         assert_eq!(deserialized.stdout, "up 42 days");
+    }
+
+    #[test]
+    fn test_group_create_params_to_group() {
+        let params = GroupCreateParams {
+            name: "production".into(),
+            description: Some("Production servers".into()),
+            color: Some("#ff0000".into()),
+        };
+        let group = params.into_group();
+        assert_eq!(group.name, "production");
+        assert_eq!(group.description, Some("Production servers".into()));
+        assert_eq!(group.color, Some("#ff0000".into()));
+    }
+
+    #[test]
+    fn test_group_update_apply() {
+        let mut group = Group::new("old-name");
+        let update = GroupUpdateParams {
+            id: group.id,
+            name: Some("new-name".into()),
+            description: Some(Some("new desc".into())),
+            color: None,
+        };
+        update.apply_to(&mut group);
+        assert_eq!(group.name, "new-name");
+        assert_eq!(group.description, Some("new desc".into()));
+        assert!(group.color.is_none()); // unchanged
+    }
+
+    #[test]
+    fn test_group_update_clear_description() {
+        let mut group = Group::new("test");
+        group.description = Some("old desc".into());
+        let update = GroupUpdateParams {
+            id: group.id,
+            name: None,
+            description: Some(None), // explicitly clear
+            color: None,
+        };
+        update.apply_to(&mut group);
+        assert!(group.description.is_none());
+    }
+
+    #[test]
+    fn test_group_params_roundtrip() {
+        let params = GroupCreateParams {
+            name: "staging".into(),
+            description: None,
+            color: Some("blue".into()),
+        };
+        let json = serde_json::to_string(&params).unwrap();
+        let deserialized: GroupCreateParams = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.name, "staging");
+        assert_eq!(deserialized.color, Some("blue".into()));
     }
 
     #[test]

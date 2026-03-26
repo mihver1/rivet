@@ -81,6 +81,16 @@ pub fn build_command_tree() -> CommandNode {
         conn.add_child(CommandNode::leaf("import"));
     }
 
+    // group
+    {
+        let group = root.add_child(CommandNode::new("group"));
+        group.add_child(CommandNode::leaf("list"));
+        group.add_child(CommandNode::leaf("show"));
+        group.add_child(CommandNode::leaf("add"));
+        group.add_child(CommandNode::leaf("edit"));
+        group.add_child(CommandNode::leaf("rm"));
+    }
+
     // ssh
     {
         let ssh = root.add_child(CommandNode::new("ssh"));
@@ -321,6 +331,33 @@ mod tests {
         assert_eq!(
             resolve_prefix(&t, &["ssh"]),
             Resolved::Match(vec!["ssh".into()])
+        );
+    }
+
+    #[test]
+    fn test_group_list_prefix() {
+        let t = tree();
+        assert_eq!(
+            resolve_prefix(&t, &["g", "l"]),
+            Resolved::Match(vec!["group".into(), "list".into()])
+        );
+    }
+
+    #[test]
+    fn test_group_show_prefix() {
+        let t = tree();
+        assert_eq!(
+            resolve_prefix(&t, &["gr", "sh"]),
+            Resolved::Match(vec!["group".into(), "show".into()])
+        );
+    }
+
+    #[test]
+    fn test_group_add_prefix() {
+        let t = tree();
+        assert_eq!(
+            resolve_prefix(&t, &["g", "a"]),
+            Resolved::Match(vec!["group".into(), "add".into()])
         );
     }
 

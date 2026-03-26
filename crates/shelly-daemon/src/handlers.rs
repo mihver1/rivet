@@ -34,6 +34,13 @@ pub async fn dispatch(
         "conn.delete" => handle_conn_delete(state, params).await,
         "conn.import" => handle_conn_import(state, params).await,
 
+        // Group operations
+        "group.list" => handle_group_list(state).await,
+        "group.get" => handle_group_get(state, params).await,
+        "group.create" => handle_group_create(state, params).await,
+        "group.update" => handle_group_update(state, params).await,
+        "group.delete" => handle_group_delete(state, params).await,
+
         // SSH operations
         "ssh.exec" => handle_ssh_exec(state, params).await,
         "ssh.connect_info" => handle_ssh_connect_info(state, params).await,
@@ -346,6 +353,150 @@ async fn handle_conn_import(
     to_value(ConnImportResult {
         imported: imported as u32,
     })
+}
+
+// --- Groups ---
+
+async fn handle_group_list(state: &SharedState) -> Result<Value, JsonRpcError> {
+    let state = state.read().await;
+
+    let vault = state
+        .vault
+        .as_ref()
+        .ok_or_else(|| to_rpc_error(ShellyError::VaultLocked))?;
+
+    let groups = vault.list_groups().map_err(to_rpc_error)?;
+    to_value(groups)
+}
+
+async fn handle_group_get(
+    state: &SharedState,
+    params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    let p: GroupGetParams = parse_params(params)?;
+    let state = state.read().await;
+
+    let vault = state
+        .vault
+        .as_ref()
+        .ok_or_else(|| to_rpc_error(ShellyError::VaultLocked))?;
+
+    let group = if let Some(id) = p.id {
+        vault.load_group(&id).map_err(to_rpc_error)?
+    } else if let Some(ref name) = p.name {
+        find_group_by_name(vault, name)?
+    } else {
+        return Err(JsonRpcError {
+            code: -32602,
+            message: "either 'id' or 'name' is required".into(),
+            data: None,
+        });
+    };
+
+    to_value(group)
+}
+
+async fn handle_group_create(
+    state: &SharedState,
+    params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    let p: GroupCreateParams = parse_params(params)?;
+    let mut state = state.write().await;
+
+    let vault = state.require_vault().map_err(to_rpc_error)?;
+
+    // Check for duplicate name
+    let existing = vault.list_groups().map_err(to_rpc_error)?;
+    if existing.iter().any(|g| g.name == p.name) {
+        return Err(to_rpc_error(ShellyError::DuplicateGroupName(
+            p.name.clone(),
+        )));
+    }
+
+    let group = p.into_group();
+    let id = group.id;
+    vault.save_group(&group).map_err(to_rpc_error)?;
+
+    info!(id = %id, name = %group.name, "group created");
+    to_value(IdResult { id })
+}
+
+async fn handle_group_update(
+    state: &SharedState,
+    params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    let p: GroupUpdateParams = parse_params(params)?;
+    let mut state = state.write().await;
+
+    let vault = state.require_vault().map_err(to_rpc_error)?;
+
+    let mut group = vault.load_group(&p.id).map_err(to_rpc_error)?;
+
+    // Check for duplicate name if name is being changed
+    if let Some(ref new_name) = p.name {
+        if *new_name != group.name {
+            let existing = vault.list_groups().map_err(to_rpc_error)?;
+            if existing.iter().any(|g| g.name == *new_name && g.id != p.id) {
+                return Err(to_rpc_error(ShellyError::DuplicateGroupName(
+                    new_name.clone(),
+                )));
+            }
+        }
+    }
+
+    p.apply_to(&mut group);
+    vault.save_group(&group).map_err(to_rpc_error)?;
+
+    info!(id = %group.id, name = %group.name, "group updated");
+    to_value(OkResult { ok: true })
+}
+
+async fn handle_group_delete(
+    state: &SharedState,
+    params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    let p: GroupDeleteParams = parse_params(params)?;
+    let mut state = state.write().await;
+
+    let vault = state.require_vault().map_err(to_rpc_error)?;
+
+    let id = if let Some(id) = p.id {
+        id
+    } else if let Some(ref name) = p.name {
+        let group = find_group_by_name(vault, name)?;
+        group.id
+    } else {
+        return Err(JsonRpcError {
+            code: -32602,
+            message: "either 'id' or 'name' is required".into(),
+            data: None,
+        });
+    };
+
+    // Remove group_id from all connections that reference it
+    let connections = vault.list_connections().map_err(to_rpc_error)?;
+    for mut conn in connections {
+        if conn.group_ids.contains(&id) {
+            conn.group_ids.retain(|gid| *gid != id);
+            conn.updated_at = chrono::Utc::now();
+            vault.save_connection(&conn).map_err(to_rpc_error)?;
+        }
+    }
+
+    vault.delete_group(&id).map_err(to_rpc_error)?;
+
+    info!(id = %id, "group deleted");
+    to_value(OkResult { ok: true })
+}
+
+/// Find a group by name in the vault.
+fn find_group_by_name(
+    vault: &shelly_vault::store::UnlockedVault,
+    name: &str,
+) -> Result<shelly_core::connection::Group, JsonRpcError> {
+    vault
+        .find_group_by_name(name)
+        .map_err(to_rpc_error)
 }
 
 // --- SSH ---
