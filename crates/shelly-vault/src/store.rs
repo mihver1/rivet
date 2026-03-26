@@ -7,6 +7,7 @@ use uuid::Uuid;
 use zeroize::Zeroize;
 
 use shelly_core::connection::{Connection, Group};
+use shelly_core::workflow::Workflow;
 use shelly_core::error::{Result, ShellyError};
 
 use crate::crypto::{self, Argon2Params};
@@ -45,6 +46,7 @@ impl VaultStore {
         fs::create_dir_all(self.vault_dir.join("connections"))?;
         fs::create_dir_all(self.vault_dir.join("groups"))?;
         fs::create_dir_all(self.vault_dir.join("keys"))?;
+        fs::create_dir_all(self.vault_dir.join("workflows"))?;
 
         // Generate cryptographic materials
         let salt = crypto::generate_salt();
@@ -216,6 +218,32 @@ impl UnlockedVault {
             .into_iter()
             .find(|g| g.name == name)
             .ok_or_else(|| ShellyError::GroupNotFound(name.into()))
+    }
+
+    // --- Workflow convenience ---
+
+    pub fn save_workflow(&self, workflow: &Workflow) -> Result<()> {
+        self.save_entity("workflows", &workflow.id, workflow)
+    }
+
+    pub fn load_workflow(&self, id: &Uuid) -> Result<Workflow> {
+        self.load_entity("workflows", id)
+    }
+
+    pub fn list_workflows(&self) -> Result<Vec<Workflow>> {
+        self.list_entities("workflows")
+    }
+
+    pub fn delete_workflow(&self, id: &Uuid) -> Result<()> {
+        self.delete_entity("workflows", id)
+    }
+
+    pub fn find_workflow_by_name(&self, name: &str) -> Result<Workflow> {
+        let workflows = self.list_workflows()?;
+        workflows
+            .into_iter()
+            .find(|w| w.name == name)
+            .ok_or_else(|| ShellyError::WorkflowNotFound(name.into()))
     }
 
     // --- Password change ---

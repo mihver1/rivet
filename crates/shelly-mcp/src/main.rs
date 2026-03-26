@@ -274,7 +274,7 @@ mod tests {
         let resp = handle_tools_list(Some(json!(2)));
         let result = resp.result.unwrap();
         let tools = result["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 8);
+        assert_eq!(tools.len(), 10);
 
         let names: Vec<&str> = tools
             .iter()
@@ -288,6 +288,8 @@ mod tests {
         assert!(names.contains(&"show_connection"));
         assert!(names.contains(&"list_tunnels"));
         assert!(names.contains(&"create_tunnel"));
+        assert!(names.contains(&"list_workflows"));
+        assert!(names.contains(&"run_workflow"));
     }
 
     #[test]

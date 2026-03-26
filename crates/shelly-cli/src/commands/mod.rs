@@ -5,6 +5,7 @@ pub mod group;
 pub mod scp;
 pub mod tunnel;
 pub mod vault;
+pub mod workflow;
 
 use crate::client::{ClientError, DaemonClient};
 
@@ -40,6 +41,11 @@ pub async fn dispatch(command: &[String], extra_args: &[String]) -> Result<(), C
         ["exec"] => exec::exec(extra_args).await,
         ["scp", "upload"] => scp::upload(extra_args).await,
         ["scp", "download"] => scp::download(extra_args).await,
+        ["workflow", "list"] => workflow::list().await,
+        ["workflow", "show"] => workflow::show(extra_args).await,
+        ["workflow", "import"] => workflow::import(extra_args).await,
+        ["workflow", "rm"] => workflow::rm(extra_args).await,
+        ["workflow", "run"] => workflow::run(extra_args).await,
         _ => Err(CliError::UnknownCommand(command.join(" "))),
     }
 }

@@ -13,6 +13,7 @@ tracing = { workspace = true }
 comfy-table = "7"
 rpassword = "7"
 libc = "0.2"
+serde_yaml = { workspace = true }
 
 [[bin]]
 name = "shelly"

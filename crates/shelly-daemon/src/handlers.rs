@@ -50,6 +50,13 @@ pub async fn dispatch(
         "tunnel.list" => handle_tunnel_list(state).await,
         "tunnel.close" => handle_tunnel_close(state, params).await,
 
+        // Workflow operations
+        "workflow.list" => handle_workflow_list(state).await,
+        "workflow.get" => handle_workflow_get(state, params).await,
+        "workflow.import" => handle_workflow_import(state, params).await,
+        "workflow.delete" => handle_workflow_delete(state, params).await,
+        "workflow.run" => handle_workflow_run(state, params).await,
+
         // SSH operations
         "ssh.exec" => handle_ssh_exec(state, params).await,
         "ssh.connect_info" => handle_ssh_connect_info(state, params).await,
@@ -1072,6 +1079,515 @@ async fn handle_scp_download(
     to_value(ScpResult {
         bytes_transferred: bytes,
     })
+}
+
+// --- Workflow ---
+
+async fn handle_workflow_list(state: &SharedState) -> Result<Value, JsonRpcError> {
+    let state = state.read().await;
+    let vault = state.vault.as_ref().ok_or_else(|| to_rpc_error(ShellyError::VaultLocked))?;
+
+    let workflows = vault.list_workflows().map_err(to_rpc_error)?;
+    to_value(workflows)
+}
+
+async fn handle_workflow_get(
+    state: &SharedState,
+    params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    let p: WorkflowGetParams = parse_params(params)?;
+    let state = state.read().await;
+    let vault = state.vault.as_ref().ok_or_else(|| to_rpc_error(ShellyError::VaultLocked))?;
+
+    let workflow = if let Some(id) = p.id {
+        vault.load_workflow(&id).map_err(to_rpc_error)?
+    } else if let Some(name) = p.name {
+        vault.find_workflow_by_name(&name).map_err(to_rpc_error)?
+    } else {
+        return Err(JsonRpcError {
+            code: -32602,
+            message: "either id or name must be provided".into(),
+            data: None,
+        });
+    };
+
+    to_value(workflow)
+}
+
+async fn handle_workflow_import(
+    state: &SharedState,
+    params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    let p: WorkflowImportParams = parse_params(params)?;
+    let state = state.read().await;
+    let vault = state.vault.as_ref().ok_or_else(|| to_rpc_error(ShellyError::VaultLocked))?;
+
+    // Parse YAML into workflow
+    let mut workflow: shelly_core::workflow::Workflow =
+        serde_yaml::from_str(&p.yaml).map_err(|e| JsonRpcError {
+            code: -32602,
+            message: format!("invalid workflow YAML: {e}"),
+            data: None,
+        })?;
+
+    // Validate
+    workflow.validate().map_err(|errs| JsonRpcError {
+        code: -32602,
+        message: format!("workflow validation failed: {}", errs.join("; ")),
+        data: None,
+    })?;
+
+    // Check for duplicate name
+    if let Ok(existing) = vault.find_workflow_by_name(&workflow.name) {
+        return Err(to_rpc_error(ShellyError::DuplicateWorkflowName(
+            existing.name,
+        )));
+    }
+
+    // Assign a new UUID
+    workflow.id = Uuid::new_v4();
+    let id = workflow.id;
+    vault.save_workflow(&workflow).map_err(to_rpc_error)?;
+    info!(name = %workflow.name, "workflow imported");
+
+    to_value(IdResult { id })
+}
+
+async fn handle_workflow_delete(
+    state: &SharedState,
+    params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    let p: WorkflowDeleteParams = parse_params(params)?;
+    let state = state.read().await;
+    let vault = state.vault.as_ref().ok_or_else(|| to_rpc_error(ShellyError::VaultLocked))?;
+
+    let workflow = if let Some(id) = p.id {
+        vault.load_workflow(&id).map_err(to_rpc_error)?
+    } else if let Some(name) = p.name {
+        vault.find_workflow_by_name(&name).map_err(to_rpc_error)?
+    } else {
+        return Err(JsonRpcError {
+            code: -32602,
+            message: "either id or name must be provided".into(),
+            data: None,
+        });
+    };
+
+    vault.delete_workflow(&workflow.id).map_err(to_rpc_error)?;
+    info!(name = %workflow.name, "workflow deleted");
+
+    to_value(OkResult { ok: true })
+}
+
+async fn handle_workflow_run(
+    state: &SharedState,
+    params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    let p: WorkflowRunParams = parse_params(params)?;
+
+    // Resolve workflow
+    let workflow = {
+        let state = state.read().await;
+        let vault = state
+            .vault
+            .as_ref()
+            .ok_or_else(|| to_rpc_error(ShellyError::VaultLocked))?;
+
+        if let Some(id) = p.workflow_id {
+            vault.load_workflow(&id).map_err(to_rpc_error)?
+        } else if let Some(name) = &p.workflow_name {
+            vault.find_workflow_by_name(name).map_err(to_rpc_error)?
+        } else {
+            return Err(JsonRpcError {
+                code: -32602,
+                message: "either workflow_id or workflow_name must be provided".into(),
+                data: None,
+            });
+        }
+    };
+
+    // Resolve target connections
+    let connections = {
+        let state = state.read().await;
+        let vault = state
+            .vault
+            .as_ref()
+            .ok_or_else(|| to_rpc_error(ShellyError::VaultLocked))?;
+
+        if let Some(conn_id) = p.connection_id {
+            vec![vault.load_connection(&conn_id).map_err(to_rpc_error)?]
+        } else if let Some(conn_name) = &p.connection_name {
+            vec![find_connection_by_name(vault, conn_name)?]
+        } else if let Some(group_id) = p.group_id {
+            let group = vault.load_group(&group_id).map_err(to_rpc_error)?;
+            get_group_connections(vault, &group)?
+        } else if let Some(group_name) = &p.group_name {
+            let group = find_group_by_name(vault, group_name)?;
+            get_group_connections(vault, &group)?
+        } else {
+            return Err(JsonRpcError {
+                code: -32602,
+                message: "target required: connection_id, connection_name, group_id, or group_name"
+                    .into(),
+                data: None,
+            });
+        }
+    };
+
+    // Merge variables
+    let vars = workflow.merged_variables(&p.variables);
+
+    // Run workflow on each connection
+    let mut all_results = Vec::new();
+
+    for conn in &connections {
+        let result =
+            execute_workflow_on_connection(state, &workflow, conn, &vars).await;
+        all_results.push(result);
+    }
+
+    to_value(all_results)
+}
+
+/// Execute a workflow on a single connection.
+async fn execute_workflow_on_connection(
+    state: &SharedState,
+    workflow: &shelly_core::workflow::Workflow,
+    conn: &shelly_core::connection::Connection,
+    vars: &std::collections::HashMap<String, String>,
+) -> shelly_core::workflow::WorkflowResult {
+    use shelly_core::workflow::*;
+
+    let mut step_results = Vec::new();
+    let mut completed = 0;
+    let mut failed = 0;
+    let mut aborted = false;
+
+    for step in &workflow.steps {
+        if aborted {
+            step_results.push(StepResult {
+                step_name: step.name.clone(),
+                success: false,
+                skipped: true,
+                stdout: None,
+                stderr: None,
+                exit_code: None,
+                bytes_transferred: None,
+                error: Some("aborted due to previous step failure".into()),
+            });
+            continue;
+        }
+
+        let expanded = step.expand(vars);
+
+        // Check condition
+        if let Some(ref condition) = expanded.condition {
+            let cond_result = execute_command_on_connection(
+                state,
+                &conn.id,
+                conn,
+                condition,
+            )
+            .await;
+
+            match cond_result {
+                Ok(exec_result) if exec_result.exit_code != 0 => {
+                    step_results.push(StepResult {
+                        step_name: expanded.name.clone(),
+                        success: true,
+                        skipped: true,
+                        stdout: None,
+                        stderr: None,
+                        exit_code: None,
+                        bytes_transferred: None,
+                        error: None,
+                    });
+                    completed += 1;
+                    continue;
+                }
+                Err(e) => {
+                    step_results.push(StepResult {
+                        step_name: expanded.name.clone(),
+                        success: false,
+                        skipped: true,
+                        stdout: None,
+                        stderr: None,
+                        exit_code: None,
+                        bytes_transferred: None,
+                        error: Some(format!("condition check failed: {e}")),
+                    });
+                    failed += 1;
+                    if expanded.on_failure == OnFailure::Abort {
+                        aborted = true;
+                    }
+                    continue;
+                }
+                _ => {} // condition passed, proceed
+            }
+        }
+
+        let step_result = match &expanded.action {
+            StepAction::Exec(exec) => {
+                execute_exec_step(state, &conn.id, conn, &expanded.name, &exec.command).await
+            }
+            StepAction::Upload(transfer) => {
+                execute_upload_step(
+                    state,
+                    &conn.id,
+                    conn,
+                    &expanded.name,
+                    &transfer.local_path,
+                    &transfer.remote_path,
+                )
+                .await
+            }
+            StepAction::Download(transfer) => {
+                execute_download_step(
+                    state,
+                    &conn.id,
+                    conn,
+                    &expanded.name,
+                    &transfer.remote_path,
+                    &transfer.local_path,
+                )
+                .await
+            }
+        };
+
+        if step_result.success {
+            completed += 1;
+        } else {
+            failed += 1;
+            match expanded.on_failure {
+                OnFailure::Abort => aborted = true,
+                OnFailure::Continue | OnFailure::Skip => {}
+            }
+        }
+
+        step_results.push(step_result);
+    }
+
+    WorkflowResult {
+        workflow_name: workflow.name.clone(),
+        connection_name: conn.name.clone(),
+        steps: step_results,
+        success: failed == 0,
+        total_steps: workflow.steps.len(),
+        completed_steps: completed,
+        failed_steps: failed,
+    }
+}
+
+/// Execute a single exec step.
+async fn execute_exec_step(
+    state: &SharedState,
+    conn_id: &Uuid,
+    conn: &shelly_core::connection::Connection,
+    step_name: &str,
+    command: &str,
+) -> shelly_core::workflow::StepResult {
+    match execute_command_on_connection(state, conn_id, conn, command).await {
+        Ok(exec_result) => shelly_core::workflow::StepResult {
+            step_name: step_name.into(),
+            success: exec_result.exit_code == 0,
+            skipped: false,
+            stdout: Some(exec_result.stdout),
+            stderr: Some(exec_result.stderr),
+            exit_code: Some(exec_result.exit_code),
+            bytes_transferred: None,
+            error: None,
+        },
+        Err(e) => shelly_core::workflow::StepResult {
+            step_name: step_name.into(),
+            success: false,
+            skipped: false,
+            stdout: None,
+            stderr: None,
+            exit_code: None,
+            bytes_transferred: None,
+            error: Some(e),
+        },
+    }
+}
+
+/// Execute a command on a connection (shared helper for workflow engine).
+async fn execute_command_on_connection(
+    state: &SharedState,
+    conn_id: &Uuid,
+    conn: &shelly_core::connection::Connection,
+    command: &str,
+) -> Result<SshExecResult, String> {
+    // Ensure session
+    {
+        let mut state = state.write().await;
+        ensure_session(&mut state, conn_id, conn)
+            .await
+            .map_err(|e| e.message.clone())?;
+    }
+
+    // Execute
+    let state = state.read().await;
+    let session = state
+        .sessions
+        .get(conn_id)
+        .ok_or_else(|| "session not found".to_string())?;
+
+    let result = session
+        .exec(command)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(SshExecResult {
+        exit_code: result.exit_code as i32,
+        stdout: result.stdout_str(),
+        stderr: result.stderr_str(),
+    })
+}
+
+/// Execute an upload step.
+async fn execute_upload_step(
+    state: &SharedState,
+    conn_id: &Uuid,
+    conn: &shelly_core::connection::Connection,
+    step_name: &str,
+    local_path: &str,
+    remote_path: &str,
+) -> shelly_core::workflow::StepResult {
+    // Ensure session
+    {
+        let mut state = state.write().await;
+        if let Err(e) = ensure_session(&mut state, conn_id, conn).await {
+            return shelly_core::workflow::StepResult {
+                step_name: step_name.into(),
+                success: false,
+                skipped: false,
+                stdout: None,
+                stderr: None,
+                exit_code: None,
+                bytes_transferred: None,
+                error: Some(e.message),
+            };
+        }
+    }
+
+    let state = state.read().await;
+    let session = match state.sessions.get(conn_id) {
+        Some(s) => s,
+        None => {
+            return shelly_core::workflow::StepResult {
+                step_name: step_name.into(),
+                success: false,
+                skipped: false,
+                stdout: None,
+                stderr: None,
+                exit_code: None,
+                bytes_transferred: None,
+                error: Some("session not found".into()),
+            }
+        }
+    };
+
+    match session.upload_file(&PathBuf::from(local_path), remote_path).await {
+        Ok(bytes) => shelly_core::workflow::StepResult {
+            step_name: step_name.into(),
+            success: true,
+            skipped: false,
+            stdout: None,
+            stderr: None,
+            exit_code: None,
+            bytes_transferred: Some(bytes),
+            error: None,
+        },
+        Err(e) => shelly_core::workflow::StepResult {
+            step_name: step_name.into(),
+            success: false,
+            skipped: false,
+            stdout: None,
+            stderr: None,
+            exit_code: None,
+            bytes_transferred: None,
+            error: Some(e.to_string()),
+        },
+    }
+}
+
+/// Execute a download step.
+async fn execute_download_step(
+    state: &SharedState,
+    conn_id: &Uuid,
+    conn: &shelly_core::connection::Connection,
+    step_name: &str,
+    remote_path: &str,
+    local_path: &str,
+) -> shelly_core::workflow::StepResult {
+    // Ensure session
+    {
+        let mut state = state.write().await;
+        if let Err(e) = ensure_session(&mut state, conn_id, conn).await {
+            return shelly_core::workflow::StepResult {
+                step_name: step_name.into(),
+                success: false,
+                skipped: false,
+                stdout: None,
+                stderr: None,
+                exit_code: None,
+                bytes_transferred: None,
+                error: Some(e.message),
+            };
+        }
+    }
+
+    let state = state.read().await;
+    let session = match state.sessions.get(conn_id) {
+        Some(s) => s,
+        None => {
+            return shelly_core::workflow::StepResult {
+                step_name: step_name.into(),
+                success: false,
+                skipped: false,
+                stdout: None,
+                stderr: None,
+                exit_code: None,
+                bytes_transferred: None,
+                error: Some("session not found".into()),
+            }
+        }
+    };
+
+    match session.download_file(remote_path, &PathBuf::from(local_path)).await {
+        Ok(bytes) => shelly_core::workflow::StepResult {
+            step_name: step_name.into(),
+            success: true,
+            skipped: false,
+            stdout: None,
+            stderr: None,
+            exit_code: None,
+            bytes_transferred: Some(bytes),
+            error: None,
+        },
+        Err(e) => shelly_core::workflow::StepResult {
+            step_name: step_name.into(),
+            success: false,
+            skipped: false,
+            stdout: None,
+            stderr: None,
+            exit_code: None,
+            bytes_transferred: None,
+            error: Some(e.to_string()),
+        },
+    }
+}
+
+/// Get all connections belonging to a group.
+fn get_group_connections(
+    vault: &shelly_vault::store::UnlockedVault,
+    group: &shelly_core::connection::Group,
+) -> Result<Vec<shelly_core::connection::Connection>, JsonRpcError> {
+    let all_connections = vault.list_connections().map_err(to_rpc_error)?;
+    Ok(all_connections
+        .into_iter()
+        .filter(|c| c.group_ids.contains(&group.id))
+        .collect())
 }
 
 // --- Helpers ---

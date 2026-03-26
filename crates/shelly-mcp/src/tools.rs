@@ -163,6 +163,42 @@ pub fn all_tools() -> Vec<ToolDefinition> {
                 "required": ["connection", "tunnel_type", "local_port"]
             }),
         },
+        ToolDefinition {
+            name: "list_workflows".into(),
+            description: "List all saved workflows. Workflows are YAML-defined automation sequences (exec, upload, download steps) that can be run on connections or groups.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {},
+                "required": []
+            }),
+        },
+        ToolDefinition {
+            name: "run_workflow".into(),
+            description: "Run a saved workflow on a connection or group. Workflows execute a sequence of steps (exec commands, upload/download files) with variable substitution and error handling.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "workflow": {
+                        "type": "string",
+                        "description": "Workflow name"
+                    },
+                    "connection": {
+                        "type": "string",
+                        "description": "Connection name (use either connection or group)"
+                    },
+                    "group": {
+                        "type": "string",
+                        "description": "Group name to run on all members (use either connection or group)"
+                    },
+                    "variables": {
+                        "type": "object",
+                        "description": "Variable overrides (key-value pairs to override workflow defaults)",
+                        "additionalProperties": { "type": "string" }
+                    }
+                },
+                "required": ["workflow"]
+            }),
+        },
     ]
 }
 
@@ -189,6 +225,8 @@ pub async fn call_tool(
         "download_file" => handle_download_file(&mut client, arguments).await,
         "list_tunnels" => handle_list_tunnels(&mut client, arguments).await,
         "create_tunnel" => handle_create_tunnel(&mut client, arguments).await,
+        "list_workflows" => handle_list_workflows(&mut client, arguments).await,
+        "run_workflow" => handle_run_workflow(&mut client, arguments).await,
         _ => Err(format!("Unknown tool: {name}")),
     }
 }
@@ -667,5 +705,128 @@ async fn handle_create_tunnel(
     Ok(json!({
         "text": format!("Tunnel created: {desc} via {connection} (id: {tunnel_id})"),
         "tunnel_id": tunnel_id
+    }))
+}
+
+async fn handle_list_workflows(
+    client: &mut DaemonClient,
+    _args: &Value,
+) -> Result<Value, String> {
+    let result = client
+        .call("workflow.list", None)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let workflows = result
+        .as_array()
+        .ok_or("unexpected response format")?;
+
+    let mut lines = Vec::new();
+    if workflows.is_empty() {
+        lines.push("No workflows saved.".to_string());
+    } else {
+        lines.push(format!("{} workflow(s):", workflows.len()));
+        lines.push(String::new());
+        for wf in workflows {
+            let name = wf.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+            let desc = wf.get("description").and_then(|v| v.as_str()).unwrap_or("");
+            let steps = wf.get("steps").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+            lines.push(format!("- {name} ({steps} steps){}", if desc.is_empty() { String::new() } else { format!(" — {desc}") }));
+        }
+    }
+
+    Ok(json!({ "text": lines.join("\n"), "workflows": result }))
+}
+
+async fn handle_run_workflow(
+    client: &mut DaemonClient,
+    args: &Value,
+) -> Result<Value, String> {
+    let workflow = args
+        .get("workflow")
+        .and_then(|v| v.as_str())
+        .ok_or("missing required parameter: workflow")?;
+
+    let connection = args.get("connection").and_then(|v| v.as_str());
+    let group = args.get("group").and_then(|v| v.as_str());
+
+    if connection.is_none() && group.is_none() {
+        return Err("either 'connection' or 'group' must be specified".into());
+    }
+
+    let variables: std::collections::HashMap<String, String> = args
+        .get("variables")
+        .and_then(|v| v.as_object())
+        .map(|obj| {
+            obj.iter()
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let params = json!({
+        "workflow_name": workflow,
+        "connection_name": connection,
+        "group_name": group,
+        "variables": variables
+    });
+
+    let result = client
+        .call("workflow.run", Some(params))
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let results = result
+        .as_array()
+        .ok_or("unexpected response format")?;
+
+    let mut lines = Vec::new();
+    let mut all_success = true;
+
+    for wf_result in results {
+        let conn_name = wf_result.get("connection_name").and_then(|v| v.as_str()).unwrap_or("?");
+        let wf_name = wf_result.get("workflow_name").and_then(|v| v.as_str()).unwrap_or("?");
+        let success = wf_result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+        let completed = wf_result.get("completed_steps").and_then(|v| v.as_u64()).unwrap_or(0);
+        let total = wf_result.get("total_steps").and_then(|v| v.as_u64()).unwrap_or(0);
+        let failed = wf_result.get("failed_steps").and_then(|v| v.as_u64()).unwrap_or(0);
+
+        if !success {
+            all_success = false;
+        }
+
+        lines.push(format!("=== {wf_name} on {conn_name} ==="));
+
+        if let Some(steps) = wf_result.get("steps").and_then(|v| v.as_array()) {
+            for step in steps {
+                let name = step.get("step_name").and_then(|v| v.as_str()).unwrap_or("?");
+                let ok = step.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+                let skipped = step.get("skipped").and_then(|v| v.as_bool()).unwrap_or(false);
+
+                let status = if skipped { "SKIP" } else if ok { "OK" } else { "FAIL" };
+                let mut line = format!("[{status}] {name}");
+
+                if let Some(stdout) = step.get("stdout").and_then(|v| v.as_str()) {
+                    if !stdout.is_empty() {
+                        line.push_str(&format!("\n  {}", stdout.trim()));
+                    }
+                }
+
+                if let Some(err) = step.get("error").and_then(|v| v.as_str()) {
+                    line.push_str(&format!("\n  error: {err}"));
+                }
+
+                lines.push(line);
+            }
+        }
+
+        let status_label = if success { "SUCCESS" } else { "FAILED" };
+        lines.push(format!("--- {completed}/{total} completed, {failed} failed [{status_label}]\n"));
+    }
+
+    Ok(json!({
+        "text": lines.join("\n"),
+        "success": all_success,
+        "results": result
     }))
 }

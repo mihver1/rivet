@@ -119,6 +119,16 @@ pub fn build_command_tree() -> CommandNode {
         scp.add_child(CommandNode::leaf("download"));
     }
 
+    // workflow
+    {
+        let workflow = root.add_child(CommandNode::new("workflow"));
+        workflow.add_child(CommandNode::leaf("list"));
+        workflow.add_child(CommandNode::leaf("show"));
+        workflow.add_child(CommandNode::leaf("import"));
+        workflow.add_child(CommandNode::leaf("rm"));
+        workflow.add_child(CommandNode::leaf("run"));
+    }
+
     root
 }
 
@@ -432,5 +442,32 @@ mod tests {
         assert_eq!(suggest_command(&t, "vaul"), Some("vault".into()));
         assert_eq!(suggest_command(&t, "cnn"), Some("conn".into()));
         assert_eq!(suggest_command(&t, "zzz"), None);
+    }
+
+    #[test]
+    fn test_workflow_list_prefix() {
+        let t = tree();
+        assert_eq!(
+            resolve_prefix(&t, &["w", "l"]),
+            Resolved::Match(vec!["workflow".into(), "list".into()])
+        );
+    }
+
+    #[test]
+    fn test_workflow_run_prefix() {
+        let t = tree();
+        assert_eq!(
+            resolve_prefix(&t, &["wo", "ru"]),
+            Resolved::Match(vec!["workflow".into(), "run".into()])
+        );
+    }
+
+    #[test]
+    fn test_workflow_import_prefix() {
+        let t = tree();
+        assert_eq!(
+            resolve_prefix(&t, &["w", "i"]),
+            Resolved::Match(vec!["workflow".into(), "import".into()])
+        );
     }
 }

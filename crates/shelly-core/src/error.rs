@@ -50,6 +50,15 @@ pub enum ShellyError {
     #[error("tunnel error: {0}")]
     TunnelError(String),
 
+    #[error("workflow not found: {0}")]
+    WorkflowNotFound(String),
+
+    #[error("duplicate workflow name: {0}")]
+    DuplicateWorkflowName(String),
+
+    #[error("workflow error: {0}")]
+    WorkflowError(String),
+
     #[error("internal error: {0}")]
     InternalError(String),
 }
@@ -72,6 +81,9 @@ impl ShellyError {
             Self::GroupNotFound(_) => -32013,
             Self::DuplicateGroupName(_) => -32014,
             Self::TunnelError(_) => -32015,
+            Self::WorkflowNotFound(_) => -32016,
+            Self::DuplicateWorkflowName(_) => -32017,
+            Self::WorkflowError(_) => -32018,
             Self::IoError(_) => -32603,
             Self::InternalError(_) => -32603,
         }

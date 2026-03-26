@@ -415,6 +415,43 @@ pub struct TunnelCloseParams {
     pub id: Uuid,
 }
 
+// --- Workflow ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowGetParams {
+    pub id: Option<Uuid>,
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowDeleteParams {
+    pub id: Option<Uuid>,
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowRunParams {
+    /// Workflow to run — by ID or name.
+    pub workflow_id: Option<Uuid>,
+    pub workflow_name: Option<String>,
+
+    /// Target: either a single connection or a group.
+    pub connection_id: Option<Uuid>,
+    pub connection_name: Option<String>,
+    pub group_id: Option<Uuid>,
+    pub group_name: Option<String>,
+
+    /// Variable overrides (merge with workflow defaults).
+    #[serde(default)]
+    pub variables: std::collections::HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowImportParams {
+    /// Raw YAML content to import.
+    pub yaml: String,
+}
+
 // --- Daemon ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
