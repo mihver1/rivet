@@ -1,0 +1,12 @@
+[package]
+name = "shelly-cli"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+shelly-core = { path = "../shelly-core" }
+tokio = { workspace = true }
+
+[[bin]]
+name = "shelly"
+path = "src/main.rs"

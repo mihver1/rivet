@@ -1,0 +1,10 @@
+[package]
+name = "shelly-ssh"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+shelly-core = { path = "../shelly-core" }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }

@@ -1,0 +1,28 @@
+# Rust
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# Swift
+.build/
+.swiftpm/
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# macOS
+.DS_Store
+*.dSYM/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Shelly runtime
+.shelly/
+
+# Superpowers brainstorm
+.superpowers/
