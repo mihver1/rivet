@@ -8,3 +8,7 @@ shelly-core = { path = "../shelly-core" }
 tokio = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+russh = "0.58"
+
+[dev-dependencies]
+tokio = { workspace = true }
