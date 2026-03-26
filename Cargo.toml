@@ -1,3 +1,8 @@
+[package]
+name = "shelly-workspace-tests"
+version = "0.1.0"
+edition = "2024"
+
 [workspace]
 resolver = "2"
 members = [
@@ -7,6 +12,15 @@ members = [
     "crates/shelly-daemon",
     "crates/shelly-cli",
 ]
+
+[dependencies]
+shelly-core = { path = "crates/shelly-core" }
+shelly-vault = { path = "crates/shelly-vault" }
+shelly-ssh = { path = "crates/shelly-ssh" }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+tempfile = "3"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
