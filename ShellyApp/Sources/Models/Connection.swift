@@ -194,3 +194,180 @@ struct SshExecResult: Codable {
         case stdout, stderr
     }
 }
+
+// MARK: - Groups
+
+/// Mirror of Rust's Group type
+struct ShellyGroup: Codable, Identifiable, Hashable {
+    let id: UUID
+    var name: String
+    var description: String?
+    var color: String?
+
+    static func == (lhs: ShellyGroup, rhs: ShellyGroup) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+}
+
+// MARK: - Tunnels
+
+/// Mirror of Rust's TunnelInfo type
+struct TunnelInfo: Codable, Identifiable {
+    let id: UUID
+    let connectionId: UUID
+    let connectionName: String
+    let spec: TunnelSpec
+    let active: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case connectionId = "connection_id"
+        case connectionName = "connection_name"
+        case spec, active
+    }
+}
+
+/// Mirror of Rust's TunnelSpec enum
+enum TunnelSpec: Codable {
+    case local(localPort: UInt16, remoteHost: String, remotePort: UInt16)
+    case remote(remotePort: UInt16, localHost: String, localPort: UInt16)
+    case dynamic(localPort: UInt16)
+
+    enum CodingKeys: String, CodingKey {
+        case Local, Remote, Dynamic
+    }
+
+    struct LocalData: Codable {
+        let localPort: UInt16
+        let remoteHost: String
+        let remotePort: UInt16
+        enum CodingKeys: String, CodingKey {
+            case localPort = "local_port"
+            case remoteHost = "remote_host"
+            case remotePort = "remote_port"
+        }
+    }
+
+    struct RemoteData: Codable {
+        let remotePort: UInt16
+        let localHost: String
+        let localPort: UInt16
+        enum CodingKeys: String, CodingKey {
+            case remotePort = "remote_port"
+            case localHost = "local_host"
+            case localPort = "local_port"
+        }
+    }
+
+    struct DynamicData: Codable {
+        let localPort: UInt16
+        enum CodingKeys: String, CodingKey {
+            case localPort = "local_port"
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let data = try? container.decode(LocalData.self, forKey: .Local) {
+            self = .local(localPort: data.localPort, remoteHost: data.remoteHost, remotePort: data.remotePort)
+        } else if let data = try? container.decode(RemoteData.self, forKey: .Remote) {
+            self = .remote(remotePort: data.remotePort, localHost: data.localHost, localPort: data.localPort)
+        } else if let data = try? container.decode(DynamicData.self, forKey: .Dynamic) {
+            self = .dynamic(localPort: data.localPort)
+        } else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unknown tunnel spec"))
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .local(let lp, let rh, let rp):
+            try container.encode(LocalData(localPort: lp, remoteHost: rh, remotePort: rp), forKey: .Local)
+        case .remote(let rp, let lh, let lp):
+            try container.encode(RemoteData(remotePort: rp, localHost: lh, localPort: lp), forKey: .Remote)
+        case .dynamic(let lp):
+            try container.encode(DynamicData(localPort: lp), forKey: .Dynamic)
+        }
+    }
+
+    var displayString: String {
+        switch self {
+        case .local(let lp, let rh, let rp):
+            return "-L \(lp):\(rh):\(rp)"
+        case .remote(let rp, let lh, let lp):
+            return "-R \(rp):\(lh):\(lp)"
+        case .dynamic(let lp):
+            return "-D \(lp)"
+        }
+    }
+
+    var typeLabel: String {
+        switch self {
+        case .local: return "Local"
+        case .remote: return "Remote"
+        case .dynamic: return "Dynamic"
+        }
+    }
+}
+
+// MARK: - Workflows
+
+/// Workflow summary for list view
+struct WorkflowSummary: Codable, Identifiable {
+    let id: UUID
+    let name: String
+    let description: String?
+    let steps: [WorkflowStepSummary]
+    let variables: [String: String]?
+
+    var stepCount: Int { steps.count }
+}
+
+struct WorkflowStepSummary: Codable {
+    let name: String
+}
+
+/// Result of running a workflow
+struct WorkflowRunResult: Codable {
+    let workflowName: String
+    let connectionName: String
+    let steps: [StepRunResult]
+    let success: Bool
+    let totalSteps: Int
+    let completedSteps: Int
+    let failedSteps: Int
+
+    enum CodingKeys: String, CodingKey {
+        case workflowName = "workflow_name"
+        case connectionName = "connection_name"
+        case steps, success
+        case totalSteps = "total_steps"
+        case completedSteps = "completed_steps"
+        case failedSteps = "failed_steps"
+    }
+}
+
+struct StepRunResult: Codable, Identifiable {
+    var id: String { stepName }
+    let stepName: String
+    let success: Bool
+    let skipped: Bool
+    let stdout: String?
+    let stderr: String?
+    let exitCode: Int32?
+    let bytesTransferred: UInt64?
+    let error: String?
+
+    enum CodingKeys: String, CodingKey {
+        case stepName = "step_name"
+        case success, skipped, stdout, stderr
+        case exitCode = "exit_code"
+        case bytesTransferred = "bytes_transferred"
+        case error
+    }
+}

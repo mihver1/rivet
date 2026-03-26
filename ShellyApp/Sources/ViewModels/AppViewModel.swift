@@ -13,6 +13,9 @@ class AppViewModel: ObservableObject {
     @Published var appState: AppState = .connecting
     @Published var connections: [ShellyConnection] = []
     @Published var selectedConnection: ShellyConnection?
+    @Published var groups: [ShellyGroup] = []
+    @Published var tunnels: [TunnelInfo] = []
+    @Published var workflows: [WorkflowSummary] = []
     @Published var showError = false
     @Published var errorMessage = ""
     @Published var vaultStatus: VaultStatus?
@@ -42,6 +45,9 @@ class AppViewModel: ObservableObject {
             } else {
                 appState = .ready
                 await loadConnections()
+                await loadGroups()
+                await loadTunnels()
+                await loadWorkflows()
             }
         } catch {
             showError(error)
@@ -92,6 +98,9 @@ class AppViewModel: ObservableObject {
         do {
             try await client.callVoid(method: "vault.lock")
             connections = []
+            groups = []
+            tunnels = []
+            workflows = []
             selectedConnection = nil
             appState = .vaultLocked
         } catch {
@@ -174,6 +183,115 @@ class AppViewModel: ObservableObject {
                     message: "AppleScript error: \(error)"
                 ))
             }
+        }
+    }
+
+    // MARK: - Groups
+
+    func loadGroups() async {
+        do {
+            let grps: [ShellyGroup] = try await client.call(method: "group.list")
+            groups = grps.sorted { $0.name < $1.name }
+        } catch {
+            showError(error)
+        }
+    }
+
+    func createGroup(name: String, description: String?, color: String?) async {
+        struct Params: Encodable { let name: String; let description: String?; let color: String? }
+        do {
+            let _: IdResult = try await client.call(
+                method: "group.create",
+                params: Params(name: name, description: description, color: color)
+            )
+            await loadGroups()
+        } catch {
+            showError(error)
+        }
+    }
+
+    func deleteGroup(_ group: ShellyGroup) async {
+        struct Params: Encodable { let id: UUID; let name: String? }
+        do {
+            try await client.callVoid(
+                method: "group.delete",
+                params: Params(id: group.id, name: nil)
+            )
+            groups.removeAll { $0.id == group.id }
+        } catch {
+            showError(error)
+        }
+    }
+
+    func connectionsInGroup(_ group: ShellyGroup) -> [ShellyConnection] {
+        connections.filter { $0.groupIds.contains(group.id) }
+    }
+
+    // MARK: - Tunnels
+
+    func loadTunnels() async {
+        do {
+            let tuns: [TunnelInfo] = try await client.call(method: "tunnel.list")
+            tunnels = tuns
+        } catch {
+            showError(error)
+        }
+    }
+
+    func closeTunnel(_ tunnel: TunnelInfo) async {
+        struct Params: Encodable { let id: UUID }
+        do {
+            try await client.callVoid(method: "tunnel.close", params: Params(id: tunnel.id))
+            tunnels.removeAll { $0.id == tunnel.id }
+        } catch {
+            showError(error)
+        }
+    }
+
+    // MARK: - Workflows
+
+    func loadWorkflows() async {
+        do {
+            let wfs: [WorkflowSummary] = try await client.call(method: "workflow.list")
+            workflows = wfs.sorted { $0.name < $1.name }
+        } catch {
+            showError(error)
+        }
+    }
+
+    func deleteWorkflow(_ workflow: WorkflowSummary) async {
+        struct Params: Encodable { let id: UUID; let name: String? }
+        do {
+            try await client.callVoid(
+                method: "workflow.delete",
+                params: Params(id: workflow.id, name: nil)
+            )
+            workflows.removeAll { $0.id == workflow.id }
+        } catch {
+            showError(error)
+        }
+    }
+
+    func runWorkflow(name: String, connectionName: String?, groupName: String?) async -> [WorkflowRunResult]? {
+        struct Params: Encodable {
+            let workflow_name: String
+            let connection_name: String?
+            let group_name: String?
+            let variables: [String: String]
+        }
+        do {
+            return try await client.call(
+                method: "workflow.run",
+                params: Params(
+                    workflow_name: name,
+                    connection_name: connectionName,
+                    group_name: groupName,
+                    variables: [:]
+                )
+            )
+        } catch {
+            showError(error)
+            return nil
         }
     }
 
