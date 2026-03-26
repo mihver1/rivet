@@ -285,6 +285,57 @@ pub struct GroupDeleteParams {
     pub name: Option<String>,
 }
 
+// --- Group Operations ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupExecParams {
+    pub group_id: Option<Uuid>,
+    pub group_name: Option<String>,
+    pub command: String,
+    /// Max parallel connections (None = all at once).
+    pub concurrency: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupExecResult {
+    pub results: Vec<GroupExecHostResult>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupExecHostResult {
+    pub connection_id: Uuid,
+    pub connection_name: String,
+    pub exit_code: i32,
+    pub stdout: String,
+    pub stderr: String,
+    /// Set if connection/exec failed entirely.
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupUploadParams {
+    pub group_id: Option<Uuid>,
+    pub group_name: Option<String>,
+    pub local_path: String,
+    pub remote_path: String,
+    /// Max parallel uploads (None = all at once).
+    pub concurrency: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupUploadResult {
+    pub results: Vec<GroupUploadHostResult>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupUploadHostResult {
+    pub connection_id: Uuid,
+    pub connection_name: String,
+    pub bytes_transferred: u64,
+    /// Set if connection/upload failed entirely.
+    pub error: Option<String>,
+}
+
 // --- SSH ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

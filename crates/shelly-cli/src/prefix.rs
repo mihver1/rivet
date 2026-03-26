@@ -89,6 +89,8 @@ pub fn build_command_tree() -> CommandNode {
         group.add_child(CommandNode::leaf("add"));
         group.add_child(CommandNode::leaf("edit"));
         group.add_child(CommandNode::leaf("rm"));
+        group.add_child(CommandNode::leaf("exec"));
+        group.add_child(CommandNode::leaf("upload"));
     }
 
     // tunnel

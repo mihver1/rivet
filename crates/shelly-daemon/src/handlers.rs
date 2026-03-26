@@ -41,6 +41,10 @@ pub async fn dispatch(
         "group.update" => handle_group_update(state, params).await,
         "group.delete" => handle_group_delete(state, params).await,
 
+        // Group operations (bulk)
+        "group.exec" => handle_group_exec(state, params).await,
+        "group.upload" => handle_group_upload(state, params).await,
+
         // Tunnel operations
         "tunnel.create" => handle_tunnel_create(state, params).await,
         "tunnel.list" => handle_tunnel_list(state).await,
@@ -507,6 +511,308 @@ fn find_group_by_name(
     vault
         .find_group_by_name(name)
         .map_err(to_rpc_error)
+}
+
+// --- Group Operations ---
+
+async fn handle_group_exec(
+    state: &SharedState,
+    params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    let p: GroupExecParams = parse_params(params)?;
+
+    // Resolve group and get member connections
+    let (connections, group_name) = {
+        let state = state.read().await;
+        let vault = state
+            .vault
+            .as_ref()
+            .ok_or_else(|| to_rpc_error(ShellyError::VaultLocked))?;
+
+        let group = if let Some(id) = p.group_id {
+            vault.load_group(&id).map_err(to_rpc_error)?
+        } else if let Some(ref name) = p.group_name {
+            find_group_by_name(vault, name)?
+        } else {
+            return Err(JsonRpcError {
+                code: -32602,
+                message: "either 'group_id' or 'group_name' is required".into(),
+                data: None,
+            });
+        };
+
+        let all_conns = vault.list_connections().map_err(to_rpc_error)?;
+        let members: Vec<_> = all_conns
+            .into_iter()
+            .filter(|c| c.group_ids.contains(&group.id))
+            .collect();
+
+        if members.is_empty() {
+            return Err(JsonRpcError {
+                code: -32602,
+                message: format!("group '{}' has no connections", group.name),
+                data: None,
+            });
+        }
+
+        (members, group.name)
+    };
+
+    let concurrency = p.concurrency.unwrap_or(connections.len());
+    info!(
+        group = %group_name,
+        hosts = connections.len(),
+        concurrency,
+        command = %p.command,
+        "group exec starting"
+    );
+
+    // Execute on all connections in parallel with concurrency limit
+    let mut results = Vec::with_capacity(connections.len());
+
+    // Use chunks for concurrency control
+    for chunk in connections.chunks(concurrency) {
+        let mut handles = Vec::new();
+
+        for conn in chunk {
+            let state = state.clone();
+            let command = p.command.clone();
+            let conn = conn.clone();
+
+            handles.push(tokio::spawn(async move {
+                exec_on_host(&state, &conn, &command).await
+            }));
+        }
+
+        for handle in handles {
+            match handle.await {
+                Ok(result) => results.push(result),
+                Err(e) => results.push(GroupExecHostResult {
+                    connection_id: Uuid::nil(),
+                    connection_name: "unknown".into(),
+                    exit_code: -1,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    error: Some(format!("task panicked: {e}")),
+                }),
+            }
+        }
+    }
+
+    info!(
+        group = %group_name,
+        total = results.len(),
+        ok = results.iter().filter(|r| r.error.is_none() && r.exit_code == 0).count(),
+        "group exec completed"
+    );
+
+    to_value(GroupExecResult { results })
+}
+
+/// Execute a command on a single host, returning a result entry.
+async fn exec_on_host(
+    state: &SharedState,
+    conn: &shelly_core::connection::Connection,
+    command: &str,
+) -> GroupExecHostResult {
+    // Ensure session
+    {
+        let mut state = state.write().await;
+        let needs_new = match state.sessions.get(&conn.id) {
+            Some(s) if !s.is_closed() => false,
+            _ => true,
+        };
+        if needs_new {
+            match shelly_ssh::SshSession::connect(conn).await {
+                Ok(session) => {
+                    state.sessions.insert(conn.id, session);
+                }
+                Err(e) => {
+                    return GroupExecHostResult {
+                        connection_id: conn.id,
+                        connection_name: conn.name.clone(),
+                        exit_code: -1,
+                        stdout: String::new(),
+                        stderr: String::new(),
+                        error: Some(format!("connection failed: {e}")),
+                    };
+                }
+            }
+        }
+    }
+
+    // Execute
+    let result = {
+        let state = state.read().await;
+        let session = state.sessions.get(&conn.id).unwrap();
+        session.exec(command).await
+    };
+
+    match result {
+        Ok(exec) => GroupExecHostResult {
+            connection_id: conn.id,
+            connection_name: conn.name.clone(),
+            exit_code: exec.exit_code as i32,
+            stdout: exec.stdout_str(),
+            stderr: exec.stderr_str(),
+            error: None,
+        },
+        Err(e) => GroupExecHostResult {
+            connection_id: conn.id,
+            connection_name: conn.name.clone(),
+            exit_code: -1,
+            stdout: String::new(),
+            stderr: String::new(),
+            error: Some(format!("exec failed: {e}")),
+        },
+    }
+}
+
+async fn handle_group_upload(
+    state: &SharedState,
+    params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    let p: GroupUploadParams = parse_params(params)?;
+
+    // Resolve group and get member connections
+    let (connections, group_name) = {
+        let state = state.read().await;
+        let vault = state
+            .vault
+            .as_ref()
+            .ok_or_else(|| to_rpc_error(ShellyError::VaultLocked))?;
+
+        let group = if let Some(id) = p.group_id {
+            vault.load_group(&id).map_err(to_rpc_error)?
+        } else if let Some(ref name) = p.group_name {
+            find_group_by_name(vault, name)?
+        } else {
+            return Err(JsonRpcError {
+                code: -32602,
+                message: "either 'group_id' or 'group_name' is required".into(),
+                data: None,
+            });
+        };
+
+        let all_conns = vault.list_connections().map_err(to_rpc_error)?;
+        let members: Vec<_> = all_conns
+            .into_iter()
+            .filter(|c| c.group_ids.contains(&group.id))
+            .collect();
+
+        if members.is_empty() {
+            return Err(JsonRpcError {
+                code: -32602,
+                message: format!("group '{}' has no connections", group.name),
+                data: None,
+            });
+        }
+
+        (members, group.name)
+    };
+
+    let concurrency = p.concurrency.unwrap_or(connections.len());
+    info!(
+        group = %group_name,
+        hosts = connections.len(),
+        local = %p.local_path,
+        remote = %p.remote_path,
+        "group upload starting"
+    );
+
+    let mut results = Vec::with_capacity(connections.len());
+
+    for chunk in connections.chunks(concurrency) {
+        let mut handles = Vec::new();
+
+        for conn in chunk {
+            let state = state.clone();
+            let local_path = p.local_path.clone();
+            let remote_path = p.remote_path.clone();
+            let conn = conn.clone();
+
+            handles.push(tokio::spawn(async move {
+                upload_to_host(&state, &conn, &local_path, &remote_path).await
+            }));
+        }
+
+        for handle in handles {
+            match handle.await {
+                Ok(result) => results.push(result),
+                Err(e) => results.push(GroupUploadHostResult {
+                    connection_id: Uuid::nil(),
+                    connection_name: "unknown".into(),
+                    bytes_transferred: 0,
+                    error: Some(format!("task panicked: {e}")),
+                }),
+            }
+        }
+    }
+
+    info!(
+        group = %group_name,
+        total = results.len(),
+        ok = results.iter().filter(|r| r.error.is_none()).count(),
+        "group upload completed"
+    );
+
+    to_value(GroupUploadResult { results })
+}
+
+/// Upload a file to a single host, returning a result entry.
+async fn upload_to_host(
+    state: &SharedState,
+    conn: &shelly_core::connection::Connection,
+    local_path: &str,
+    remote_path: &str,
+) -> GroupUploadHostResult {
+    // Ensure session
+    {
+        let mut state = state.write().await;
+        let needs_new = match state.sessions.get(&conn.id) {
+            Some(s) if !s.is_closed() => false,
+            _ => true,
+        };
+        if needs_new {
+            match shelly_ssh::SshSession::connect(conn).await {
+                Ok(session) => {
+                    state.sessions.insert(conn.id, session);
+                }
+                Err(e) => {
+                    return GroupUploadHostResult {
+                        connection_id: conn.id,
+                        connection_name: conn.name.clone(),
+                        bytes_transferred: 0,
+                        error: Some(format!("connection failed: {e}")),
+                    };
+                }
+            }
+        }
+    }
+
+    // Upload
+    let result = {
+        let state = state.read().await;
+        let session = state.sessions.get(&conn.id).unwrap();
+        session
+            .upload_file(&PathBuf::from(local_path), remote_path)
+            .await
+    };
+
+    match result {
+        Ok(bytes) => GroupUploadHostResult {
+            connection_id: conn.id,
+            connection_name: conn.name.clone(),
+            bytes_transferred: bytes,
+            error: None,
+        },
+        Err(e) => GroupUploadHostResult {
+            connection_id: conn.id,
+            connection_name: conn.name.clone(),
+            bytes_transferred: 0,
+            error: Some(format!("upload failed: {e}")),
+        },
+    }
 }
 
 // --- Tunnels ---

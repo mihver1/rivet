@@ -31,6 +31,8 @@ pub async fn dispatch(command: &[String], extra_args: &[String]) -> Result<(), C
         ["group", "add"] => group::add().await,
         ["group", "edit"] => group::edit(extra_args).await,
         ["group", "rm"] => group::rm(extra_args).await,
+        ["group", "exec"] => group::exec(extra_args).await,
+        ["group", "upload"] => group::upload(extra_args).await,
         ["tunnel", "create"] => tunnel::create(extra_args).await,
         ["tunnel", "list"] => tunnel::list().await,
         ["tunnel", "close"] => tunnel::close(extra_args).await,

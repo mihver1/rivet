@@ -244,6 +244,133 @@ pub async fn rm(args: &[String]) -> Result<(), CliError> {
     Ok(())
 }
 
+pub async fn exec(args: &[String]) -> Result<(), CliError> {
+    // Usage: shelly group exec <group-name> <command...>
+    if args.is_empty() {
+        return Err(CliError::MissingArgument("group name".into()));
+    }
+
+    let group_name = &args[0];
+    let command = if args.len() > 1 {
+        args[1..].join(" ")
+    } else {
+        return Err(CliError::MissingArgument("command".into()));
+    };
+
+    let params = GroupExecParams {
+        group_id: None,
+        group_name: Some(group_name.clone()),
+        command,
+        concurrency: None,
+    };
+
+    let mut client = get_client().await?;
+    let result = client
+        .call(
+            "group.exec",
+            Some(serde_json::to_value(&params).unwrap()),
+        )
+        .await
+        .map_err(CliError::Client)?;
+
+    let exec_result: GroupExecResult =
+        serde_json::from_value(result).map_err(|e| CliError::Other(e.to_string()))?;
+
+    let mut ok_count = 0;
+    let mut fail_count = 0;
+
+    for r in &exec_result.results {
+        if let Some(ref err) = r.error {
+            println!("[{}] ERROR: {}", r.connection_name, err);
+            fail_count += 1;
+        } else {
+            if !r.stdout.is_empty() {
+                for line in r.stdout.lines() {
+                    println!("[{}] {}", r.connection_name, line);
+                }
+            }
+            if !r.stderr.is_empty() {
+                for line in r.stderr.lines() {
+                    eprintln!("[{}] stderr: {}", r.connection_name, line);
+                }
+            }
+            if r.exit_code != 0 {
+                println!("[{}] exit code: {}", r.connection_name, r.exit_code);
+                fail_count += 1;
+            } else {
+                ok_count += 1;
+            }
+        }
+    }
+
+    println!(
+        "---\n{} succeeded, {} failed ({} total)",
+        ok_count,
+        fail_count,
+        exec_result.results.len()
+    );
+
+    Ok(())
+}
+
+pub async fn upload(args: &[String]) -> Result<(), CliError> {
+    // Usage: shelly group upload <group-name> <local-path> <remote-path>
+    if args.len() < 3 {
+        return Err(CliError::MissingArgument(
+            "group name, local path, remote path".into(),
+        ));
+    }
+
+    let group_name = &args[0];
+    let local_path = &args[1];
+    let remote_path = &args[2];
+
+    let params = GroupUploadParams {
+        group_id: None,
+        group_name: Some(group_name.clone()),
+        local_path: local_path.clone(),
+        remote_path: remote_path.clone(),
+        concurrency: None,
+    };
+
+    let mut client = get_client().await?;
+    let result = client
+        .call(
+            "group.upload",
+            Some(serde_json::to_value(&params).unwrap()),
+        )
+        .await
+        .map_err(CliError::Client)?;
+
+    let upload_result: GroupUploadResult =
+        serde_json::from_value(result).map_err(|e| CliError::Other(e.to_string()))?;
+
+    let mut ok_count = 0;
+    let mut fail_count = 0;
+
+    for r in &upload_result.results {
+        if let Some(ref err) = r.error {
+            println!("[{}] ERROR: {}", r.connection_name, err);
+            fail_count += 1;
+        } else {
+            println!(
+                "[{}] {} bytes transferred",
+                r.connection_name, r.bytes_transferred
+            );
+            ok_count += 1;
+        }
+    }
+
+    println!(
+        "---\n{} succeeded, {} failed ({} total)",
+        ok_count,
+        fail_count,
+        upload_result.results.len()
+    );
+
+    Ok(())
+}
+
 fn prompt(msg: &str) -> Result<String, CliError> {
     use std::io::Write;
     print!("{msg}");
