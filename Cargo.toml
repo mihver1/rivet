@@ -11,6 +11,7 @@ members = [
     "crates/shelly-ssh",
     "crates/shelly-daemon",
     "crates/shelly-cli",
+    "crates/shelly-mcp",
 ]
 
 [dependencies]
