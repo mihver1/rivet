@@ -1,4 +1,5 @@
 pub mod conn;
+pub mod cred;
 pub mod daemon;
 pub mod exec;
 pub mod group;
@@ -27,6 +28,11 @@ pub async fn dispatch(command: &[String], extra_args: &[String]) -> Result<(), C
         ["conn", "edit"] => conn::edit(extra_args).await,
         ["conn", "rm"] => conn::rm(extra_args).await,
         ["conn", "import"] => conn::import(extra_args).await,
+        ["cred", "list"] => cred::list().await,
+        ["cred", "show"] => cred::show(extra_args).await,
+        ["cred", "add"] => cred::add().await,
+        ["cred", "edit"] => cred::edit(extra_args).await,
+        ["cred", "rm"] => cred::rm(extra_args).await,
         ["group", "list"] => group::list().await,
         ["group", "show"] => group::show(extra_args).await,
         ["group", "add"] => group::add().await,

@@ -107,20 +107,62 @@ pub async fn add() -> Result<(), CliError> {
     };
 
     println!("Auth method:");
-    println!("  1) SSH Agent (default)");
-    println!("  2) Password");
-    println!("  3) Key file");
-    let auth_choice = prompt("Choice [1]: ")?;
+    println!("  1) Use credential profile");
+    println!("  2) SSH Agent (inline, default)");
+    println!("  3) Password (inline)");
+    println!("  4) Key file (inline)");
+    let auth_choice = prompt("Choice [2]: ")?;
 
     let auth = match auth_choice.as_str() {
-        "2" => {
+        "1" => {
+            // List credential profiles and let user select
+            let mut cred_client = get_client().await?;
+            let cred_list_params = CredListParams {};
+            let cred_result = cred_client
+                .call(
+                    "cred.list",
+                    Some(serde_json::to_value(&cred_list_params).unwrap()),
+                )
+                .await
+                .map_err(CliError::Client)?;
+
+            let credentials: Vec<rivet_core::credential::Credential> =
+                serde_json::from_value(cred_result)
+                    .map_err(|e| CliError::Other(e.to_string()))?;
+
+            if credentials.is_empty() {
+                return Err(CliError::Other(
+                    "No credential profiles found. Create one with: rivet cred add".into(),
+                ));
+            }
+
+            println!("Available credential profiles:");
+            for (i, cred) in credentials.iter().enumerate() {
+                println!("  {}) {}", i + 1, cred.name);
+            }
+
+            let selection_str = prompt("Select profile: ")?;
+            let selection: usize = selection_str
+                .parse()
+                .map_err(|_| CliError::Other("invalid selection".into()))?;
+
+            if selection == 0 || selection > credentials.len() {
+                return Err(CliError::Other("selection out of range".into()));
+            }
+
+            let selected = &credentials[selection - 1];
+            rivet_core::credential::AuthSource::Profile {
+                credential_id: selected.id,
+            }
+        }
+        "3" => {
             let password = rpassword::prompt_password("Password: ")
                 .map_err(|e| CliError::Other(e.to_string()))?;
             rivet_core::credential::AuthSource::Inline(
                 rivet_core::connection::AuthMethod::Password(password),
             )
         }
-        "3" => {
+        "4" => {
             let path = prompt("Key file path: ")?;
             let passphrase_str = rpassword::prompt_password("Key passphrase (empty for none): ")
                 .map_err(|e| CliError::Other(e.to_string()))?;

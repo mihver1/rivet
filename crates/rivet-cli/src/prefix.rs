@@ -81,6 +81,16 @@ pub fn build_command_tree() -> CommandNode {
         conn.add_child(CommandNode::leaf("import"));
     }
 
+    // cred
+    {
+        let cred = root.add_child(CommandNode::new("cred"));
+        cred.add_child(CommandNode::leaf("list"));
+        cred.add_child(CommandNode::leaf("show"));
+        cred.add_child(CommandNode::leaf("add"));
+        cred.add_child(CommandNode::leaf("edit"));
+        cred.add_child(CommandNode::leaf("rm"));
+    }
+
     // group
     {
         let group = root.add_child(CommandNode::new("group"));

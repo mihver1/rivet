@@ -110,6 +110,7 @@ fn print_help() {
     println!("                              Manage the encrypted vault");
     println!("  conn   list|show|add|edit|rm|import");
     println!("                              Manage SSH connections");
+    println!("  cred   list|show|add|edit|rm  Manage credential profiles");
     println!("  ssh    <name> [args...]      Open interactive SSH session");
     println!("  exec   <name> <command>      Execute command on remote host");
     println!("  scp    upload|download       Transfer files");
