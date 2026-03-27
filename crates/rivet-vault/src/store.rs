@@ -256,6 +256,10 @@ impl UnlockedVault {
 
     pub fn load_credential(&self, id: &Uuid) -> Result<Credential> {
         self.load_entity("credentials", id)
+            .map_err(|e| match e {
+                RivetError::ConnectionNotFound(s) => RivetError::CredentialNotFound(s),
+                other => other,
+            })
     }
 
     pub fn list_credentials(&self) -> Result<Vec<Credential>> {
@@ -264,6 +268,10 @@ impl UnlockedVault {
 
     pub fn delete_credential(&self, id: &Uuid) -> Result<()> {
         self.delete_entity("credentials", id)
+            .map_err(|e| match e {
+                RivetError::ConnectionNotFound(s) => RivetError::CredentialNotFound(s),
+                other => other,
+            })
     }
 
     pub fn find_credential_by_name(&self, name: &str) -> Result<Credential> {
@@ -346,6 +354,7 @@ mod tests {
     use super::*;
     use rivet_core::connection::AuthMethod;
     use rivet_core::credential::{AuthSource, Credential};
+    use rivet_core::error::RivetError;
     use tempfile::TempDir;
 
     fn test_vault_dir() -> (TempDir, PathBuf) {
@@ -587,6 +596,6 @@ mod tests {
         conn.auth = AuthSource::Profile { credential_id: Uuid::new_v4() };
 
         let result = vault.resolve_auth(&conn);
-        assert!(result.is_err());
+        assert!(matches!(result, Err(RivetError::CredentialNotFound(_))));
     }
 }
