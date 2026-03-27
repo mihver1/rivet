@@ -362,6 +362,7 @@ pub struct SshConnectInfoResult {
     pub port: u16,
     pub username: String,
     pub key_path: Option<String>,
+    pub agent_socket_path: Option<String>,
     pub extra_args: Vec<String>,
 }
 
@@ -533,7 +534,7 @@ mod tests {
             host: "example.com".into(),
             port: Some(2222),
             username: "admin".into(),
-            auth: AuthMethod::Agent,
+            auth: AuthMethod::Agent { socket_path: None },
             tags: Some(vec!["prod".into()]),
             group_ids: None,
             jump_host: None,

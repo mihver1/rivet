@@ -999,11 +999,14 @@ async fn handle_ssh_connect_info(
         .load_connection(&p.connection_id)
         .map_err(to_rpc_error)?;
 
-    let key_path = match &conn.auth {
+    let (key_path, agent_socket_path) = match &conn.auth {
         rivet_core::connection::AuthMethod::KeyFile { path, .. } => {
-            Some(path.to_string_lossy().into_owned())
+            (Some(path.to_string_lossy().into_owned()), None)
         }
-        _ => None,
+        rivet_core::connection::AuthMethod::Agent { socket_path } => {
+            (None, socket_path.as_ref().map(|p| p.to_string_lossy().into_owned()))
+        }
+        _ => (None, None),
     };
 
     to_value(SshConnectInfoResult {
@@ -1011,6 +1014,7 @@ async fn handle_ssh_connect_info(
         port: conn.port,
         username: conn.username,
         key_path,
+        agent_socket_path,
         extra_args: conn.options.extra_args,
     })
 }

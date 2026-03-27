@@ -9,13 +9,14 @@ struct VaultUnlockView: View {
 
     var body: some View {
         VStack(spacing: 24) {
-            Image(systemName: "lock.shield")
-                .font(.system(size: 60))
-                .foregroundColor(.accentColor)
+            RivetBrandLockup(badgeSize: 76, showsTagline: false)
 
             Text(isInitMode ? "Create Vault" : "Unlock Vault")
                 .font(.title2)
                 .fontWeight(.semibold)
+
+            Text("Secure your SSH connections with a local encrypted vault.")
+                .foregroundColor(.secondary)
 
             VStack(spacing: 12) {
                 SecureField("Password", text: $password)

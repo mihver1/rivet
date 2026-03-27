@@ -32,7 +32,7 @@ pub async fn list() -> Result<(), CliError> {
             rivet_core::connection::AuthMethod::Password(_) => "password",
             rivet_core::connection::AuthMethod::PrivateKey { .. } => "key",
             rivet_core::connection::AuthMethod::KeyFile { .. } => "keyfile",
-            rivet_core::connection::AuthMethod::Agent => "agent",
+            rivet_core::connection::AuthMethod::Agent { .. } => "agent",
             rivet_core::connection::AuthMethod::Certificate { .. } => "cert",
             rivet_core::connection::AuthMethod::Interactive => "interactive",
         };
@@ -129,7 +129,15 @@ pub async fn add() -> Result<(), CliError> {
                 passphrase,
             }
         }
-        _ => rivet_core::connection::AuthMethod::Agent,
+        _ => {
+            let socket_str = prompt("Agent socket path (empty for default SSH_AUTH_SOCK): ")?;
+            let socket_path = if socket_str.is_empty() {
+                None
+            } else {
+                Some(std::path::PathBuf::from(socket_str))
+            };
+            rivet_core::connection::AuthMethod::Agent { socket_path }
+        }
     };
 
     let tags_str = prompt("Tags (comma-separated, empty for none): ")?;

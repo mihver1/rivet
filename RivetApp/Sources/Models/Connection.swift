@@ -39,7 +39,7 @@ enum AuthMethod: Codable {
     case password(String)
     case privateKey(keyData: [UInt8], passphrase: String?)
     case keyFile(path: String, passphrase: String?)
-    case agent
+    case agent(socketPath: String?)
     case certificate(certPath: String, keyPath: String)
     case interactive
 
@@ -63,7 +63,12 @@ enum AuthMethod: Codable {
             let data = try container.decode(KeyFileData.self, forKey: .data)
             self = .keyFile(path: data.path, passphrase: data.passphrase)
         case "Agent":
-            self = .agent
+            // Handle both legacy (no data) and new (data with socket_path) formats
+            if let data = try? container.decodeIfPresent(AgentData.self, forKey: .data) {
+                self = .agent(socketPath: data.socketPath)
+            } else {
+                self = .agent(socketPath: nil)
+            }
         case "Certificate":
             let data = try container.decode(CertificateData.self, forKey: .data)
             self = .certificate(certPath: data.certPath, keyPath: data.keyPath)
@@ -88,8 +93,11 @@ enum AuthMethod: Codable {
         case .keyFile(let path, let passphrase):
             try container.encode("KeyFile", forKey: .type_)
             try container.encode(KeyFileData(path: path, passphrase: passphrase), forKey: .data)
-        case .agent:
+        case .agent(let socketPath):
             try container.encode("Agent", forKey: .type_)
+            if socketPath != nil {
+                try container.encode(AgentData(socketPath: socketPath), forKey: .data)
+            }
         case .certificate(let certPath, let keyPath):
             try container.encode("Certificate", forKey: .type_)
             try container.encode(CertificateData(certPath: certPath, keyPath: keyPath), forKey: .data)
@@ -103,7 +111,11 @@ enum AuthMethod: Codable {
         case .password: return "Password"
         case .privateKey: return "Private Key"
         case .keyFile: return "Key File"
-        case .agent: return "SSH Agent"
+        case .agent(let socketPath):
+            if let path = socketPath {
+                return "SSH Agent (\(path))"
+            }
+            return "SSH Agent"
         case .certificate: return "Certificate"
         case .interactive: return "Interactive"
         }
@@ -123,6 +135,14 @@ struct PrivateKeyData: Codable {
 struct KeyFileData: Codable {
     let path: String
     let passphrase: String?
+}
+
+struct AgentData: Codable {
+    let socketPath: String?
+
+    enum CodingKeys: String, CodingKey {
+        case socketPath = "socket_path"
+    }
 }
 
 struct CertificateData: Codable {

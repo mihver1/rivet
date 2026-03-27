@@ -12,6 +12,7 @@ struct AddConnectionView: View {
     @State private var password = ""
     @State private var keyPath = ""
     @State private var keyPassphrase = ""
+    @State private var agentSocketPath = ""
     @State private var tags = ""
     @State private var notes = ""
     @State private var isSubmitting = false
@@ -45,7 +46,7 @@ struct AddConnectionView: View {
                         TextField("Key File Path", text: $keyPath)
                         SecureField("Key Passphrase (optional)", text: $keyPassphrase)
                     default:
-                        EmptyView()
+                        TextField("Agent Socket Path (optional)", text: $agentSocketPath)
                     }
                 }
 
@@ -90,7 +91,7 @@ struct AddConnectionView: View {
                 passphrase: keyPassphrase.isEmpty ? nil : keyPassphrase
             )
         default:
-            authMethod = .agent
+            authMethod = .agent(socketPath: agentSocketPath.isEmpty ? nil : agentSocketPath)
         }
 
         let parsedTags = tags

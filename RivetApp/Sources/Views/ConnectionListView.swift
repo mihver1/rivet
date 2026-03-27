@@ -29,6 +29,14 @@ struct ConnectionListView: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $sidebarSelection) {
+                Section {
+                    RivetSidebarHeader()
+                        .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 12, trailing: 0))
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .allowsHitTesting(false)
+                }
+
                 // Connections
                 Section("Connections") {
                     ForEach(filteredConnections) { conn in

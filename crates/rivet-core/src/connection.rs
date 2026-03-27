@@ -30,7 +30,7 @@ impl Connection {
             host: host.into(),
             port: 22,
             username: username.into(),
-            auth: AuthMethod::Agent,
+            auth: AuthMethod::Agent { socket_path: None },
             tags: Vec::new(),
             group_ids: Vec::new(),
             jump_host: None,
@@ -42,7 +42,7 @@ impl Connection {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", content = "data")]
 pub enum AuthMethod {
     Password(String),
@@ -54,12 +54,101 @@ pub enum AuthMethod {
         path: PathBuf,
         passphrase: Option<String>,
     },
-    Agent,
+    Agent {
+        socket_path: Option<PathBuf>,
+    },
     Certificate {
         cert_path: PathBuf,
         key_path: PathBuf,
     },
     Interactive,
+}
+
+/// Custom Deserialize for AuthMethod to handle backward compatibility.
+///
+/// Legacy vault data stores Agent as `{"type":"Agent"}` (no `data` field).
+/// The new format is `{"type":"Agent","data":{"socket_path":"/path"}}`.
+/// This deserializer handles both formats.
+impl<'de> serde::Deserialize<'de> for AuthMethod {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::Error;
+
+        let value = serde_json::Value::deserialize(deserializer)?;
+        let obj = value.as_object().ok_or_else(|| D::Error::custom("expected object"))?;
+
+        let type_str = obj
+            .get("type")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| D::Error::custom("missing 'type' field"))?;
+
+        match type_str {
+            "Agent" => {
+                // Handle both legacy (no data) and new (data with socket_path)
+                let socket_path = obj
+                    .get("data")
+                    .and_then(|d| d.as_object())
+                    .and_then(|d| d.get("socket_path"))
+                    .and_then(|v| {
+                        if v.is_null() {
+                            None
+                        } else {
+                            v.as_str().map(PathBuf::from)
+                        }
+                    });
+                Ok(AuthMethod::Agent { socket_path })
+            }
+            _ => {
+                // Delegate all other variants to a helper enum with derived Deserialize
+                #[derive(Deserialize)]
+                #[serde(tag = "type", content = "data")]
+                enum AuthMethodHelper {
+                    Password(String),
+                    PrivateKey {
+                        key_data: Vec<u8>,
+                        passphrase: Option<String>,
+                    },
+                    KeyFile {
+                        path: PathBuf,
+                        passphrase: Option<String>,
+                    },
+                    Certificate {
+                        cert_path: PathBuf,
+                        key_path: PathBuf,
+                    },
+                    Interactive,
+                }
+
+                let helper: AuthMethodHelper =
+                    serde_json::from_value(serde_json::Value::Object(obj.clone()))
+                        .map_err(D::Error::custom)?;
+
+                Ok(match helper {
+                    AuthMethodHelper::Password(p) => AuthMethod::Password(p),
+                    AuthMethodHelper::PrivateKey {
+                        key_data,
+                        passphrase,
+                    } => AuthMethod::PrivateKey {
+                        key_data,
+                        passphrase,
+                    },
+                    AuthMethodHelper::KeyFile { path, passphrase } => {
+                        AuthMethod::KeyFile { path, passphrase }
+                    }
+                    AuthMethodHelper::Certificate {
+                        cert_path,
+                        key_path,
+                    } => AuthMethod::Certificate {
+                        cert_path,
+                        key_path,
+                    },
+                    AuthMethodHelper::Interactive => AuthMethod::Interactive,
+                })
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -225,7 +314,7 @@ mod tests {
         assert_eq!(conn.host, "10.0.1.50");
         assert_eq!(conn.username, "deploy");
         assert_eq!(conn.port, 22);
-        assert!(matches!(conn.auth, AuthMethod::Agent));
+        assert!(matches!(conn.auth, AuthMethod::Agent { socket_path: None }));
         assert!(conn.tags.is_empty());
         assert!(conn.group_ids.is_empty());
         assert!(conn.jump_host.is_none());
@@ -264,7 +353,10 @@ mod tests {
                 path: PathBuf::from("/home/user/.ssh/id_ed25519"),
                 passphrase: Some("pass".into()),
             },
-            AuthMethod::Agent,
+            AuthMethod::Agent { socket_path: None },
+            AuthMethod::Agent {
+                socket_path: Some(PathBuf::from("/tmp/custom-agent.sock")),
+            },
             AuthMethod::Certificate {
                 cert_path: PathBuf::from("/cert"),
                 key_path: PathBuf::from("/key"),
@@ -276,6 +368,33 @@ mod tests {
             let json = serde_json::to_string(method).unwrap();
             let _: AuthMethod = serde_json::from_str(&json).unwrap();
         }
+    }
+
+    #[test]
+    fn test_agent_legacy_deserialization() {
+        // Legacy format: no "data" field
+        let json = r#"{"type":"Agent"}"#;
+        let auth: AuthMethod = serde_json::from_str(json).unwrap();
+        assert!(matches!(auth, AuthMethod::Agent { socket_path: None }));
+    }
+
+    #[test]
+    fn test_agent_with_socket_path_deserialization() {
+        let json = r#"{"type":"Agent","data":{"socket_path":"/tmp/agent.sock"}}"#;
+        let auth: AuthMethod = serde_json::from_str(json).unwrap();
+        match auth {
+            AuthMethod::Agent { socket_path } => {
+                assert_eq!(socket_path.unwrap(), PathBuf::from("/tmp/agent.sock"));
+            }
+            _ => panic!("expected Agent"),
+        }
+    }
+
+    #[test]
+    fn test_agent_with_null_socket_path_deserialization() {
+        let json = r#"{"type":"Agent","data":{"socket_path":null}}"#;
+        let auth: AuthMethod = serde_json::from_str(json).unwrap();
+        assert!(matches!(auth, AuthMethod::Agent { socket_path: None }));
     }
 
     #[test]

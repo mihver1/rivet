@@ -48,6 +48,10 @@ pub async fn ssh_interactive(args: &[String]) -> Result<(), CliError> {
         cmd.arg("-i").arg(key_path);
     }
 
+    if let Some(ref agent_path) = info.agent_socket_path {
+        cmd.arg("-o").arg(format!("IdentityAgent={agent_path}"));
+    }
+
     for arg in &info.extra_args {
         cmd.arg(arg);
     }

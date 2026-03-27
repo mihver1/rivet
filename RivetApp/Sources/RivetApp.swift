@@ -8,6 +8,7 @@ struct RivetApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(viewModel)
+                .tint(RivetBrandPalette.copper)
         }
         .windowStyle(.titleBar)
         .defaultSize(width: 900, height: 600)
@@ -21,7 +22,10 @@ struct ContentView: View {
         Group {
             switch viewModel.appState {
             case .connecting:
-                ProgressView("Connecting to daemon...")
+                VStack(spacing: 18) {
+                    RivetBrandLockup(badgeSize: 72, showsTagline: false)
+                    ProgressView("Connecting to daemon...")
+                }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .daemonOffline:
                 DaemonOfflineView()
@@ -47,10 +51,8 @@ struct DaemonOfflineView: View {
     @State private var isStarting = false
 
     var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "server.rack")
-                .font(.system(size: 60))
-                .foregroundColor(.secondary)
+        VStack(spacing: 22) {
+            RivetBrandLockup(badgeSize: 84, showsTagline: false)
 
             Text("Daemon Not Running")
                 .font(.title2)

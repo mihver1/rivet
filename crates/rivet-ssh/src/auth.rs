@@ -37,7 +37,9 @@ pub async fn authenticate(
             key_data,
             passphrase,
         } => auth_private_key(handle, username, key_data, passphrase.as_deref()).await,
-        AuthMethod::Agent => auth_agent(handle, username).await,
+        AuthMethod::Agent { socket_path } => {
+            auth_agent(handle, username, socket_path.as_deref()).await
+        }
         AuthMethod::Certificate { .. } => {
             warn!("certificate authentication is not yet implemented");
             Err(SshError::UnsupportedAuthMethod("Certificate"))
@@ -139,17 +141,45 @@ async fn auth_with_private_key(
 
 /// SSH agent authentication.
 ///
-/// Connects to the SSH agent (via SSH_AUTH_SOCK), lists available keys,
+/// Connects to the SSH agent, lists available keys,
 /// and tries each one until authentication succeeds or all are exhausted.
+///
+/// When `socket_path` is `Some`, connects to the specified Unix socket.
+/// When `None`, uses the `SSH_AUTH_SOCK` environment variable.
 async fn auth_agent(
     handle: &mut Handle<RivetHandler>,
     username: &str,
+    socket_path: Option<&std::path::Path>,
 ) -> Result<AuthOutcome, SshError> {
-    debug!("connecting to SSH agent");
-
-    let mut agent = agent::client::AgentClient::connect_env()
-        .await
-        .map_err(|e| SshError::Agent(format!("failed to connect to agent: {e}")))?;
+    let mut agent = match socket_path {
+        Some(path) => {
+            // Expand ~ if present
+            let expanded = if path.starts_with("~") {
+                if let Some(home) = dirs::home_dir() {
+                    home.join(path.strip_prefix("~").unwrap_or(path))
+                } else {
+                    path.to_path_buf()
+                }
+            } else {
+                path.to_path_buf()
+            };
+            debug!(path = %expanded.display(), "connecting to SSH agent at custom socket");
+            agent::client::AgentClient::connect_uds(&expanded)
+                .await
+                .map_err(|e| {
+                    SshError::Agent(format!(
+                        "failed to connect to agent at {}: {e}",
+                        expanded.display()
+                    ))
+                })?
+        }
+        None => {
+            debug!("connecting to SSH agent via SSH_AUTH_SOCK");
+            agent::client::AgentClient::connect_env()
+                .await
+                .map_err(|e| SshError::Agent(format!("failed to connect to agent: {e}")))?
+        }
+    };
 
     let identities = agent
         .request_identities()

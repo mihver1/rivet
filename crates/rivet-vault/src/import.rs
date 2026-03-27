@@ -58,6 +58,7 @@ fn parse_ssh_config_str(content: &str) -> Result<Vec<Connection>> {
                 "serveralivecountmax" => entry.keepalive_count_max = value.parse().ok(),
                 "compression" => entry.compression = value.eq_ignore_ascii_case("yes"),
                 "connecttimeout" => entry.connect_timeout = value.parse().ok(),
+                "identityagent" => entry.identity_agent = Some(expand_tilde(&value)),
                 "proxyjump" => entry.proxy_jump = Some(value),
                 _ => {} // Ignore unknown directives
             }
@@ -112,6 +113,7 @@ struct SshConfigEntry {
     user: Option<String>,
     port: Option<u16>,
     identity_file: Option<PathBuf>,
+    identity_agent: Option<PathBuf>,
     keepalive_interval: Option<u32>,
     keepalive_count_max: Option<u32>,
     compression: bool,
@@ -137,7 +139,9 @@ impl SshConfigEntry {
                 passphrase: None,
             }
         } else {
-            AuthMethod::Agent
+            AuthMethod::Agent {
+                socket_path: self.identity_agent,
+            }
         };
 
         let mut conn = Connection::new(self.name, host, username);
@@ -196,7 +200,7 @@ Host staging
         assert_eq!(connections[1].host, "staging.example.com");
         assert_eq!(connections[1].username, "admin");
         assert_eq!(connections[1].port, 22);
-        assert!(matches!(connections[1].auth, AuthMethod::Agent));
+        assert!(matches!(connections[1].auth, AuthMethod::Agent { socket_path: None }));
     }
 
     #[test]
