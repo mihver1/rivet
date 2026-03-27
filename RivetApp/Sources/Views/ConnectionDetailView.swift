@@ -113,7 +113,8 @@ struct ConnectionDetailView: View {
         if connection.port != 22 {
             cmd += " -p \(connection.port)"
         }
-        if case .keyFile(let path, _) = connection.auth {
+        if case .inline(let method) = connection.auth,
+           case .keyFile(let path, _) = method {
             cmd += " -i \(path)"
         }
         cmd += " \(connection.username)@\(connection.host)"

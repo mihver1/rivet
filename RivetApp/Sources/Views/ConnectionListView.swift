@@ -5,6 +5,7 @@ enum SidebarSelection: Hashable {
     case group(RivetGroup)
     case tunnels
     case workflows
+    case credentials
 }
 
 struct ConnectionListView: View {
@@ -113,6 +114,25 @@ struct ConnectionListView: View {
                         Image(systemName: "flowchart")
                     }
                     .tag(SidebarSelection.workflows)
+
+                    Label {
+                        HStack {
+                            Text("Credentials")
+                            Spacer()
+                            if !viewModel.credentials.isEmpty {
+                                Text("\(viewModel.credentials.count)")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 1)
+                                    .background(Color.secondary.opacity(0.15))
+                                    .cornerRadius(4)
+                            }
+                        }
+                    } icon: {
+                        Image(systemName: "key")
+                    }
+                    .tag(SidebarSelection.credentials)
                 }
             }
             .searchable(text: $searchText, prompt: "Filter")
@@ -131,6 +151,7 @@ struct ConnectionListView: View {
                             await viewModel.loadGroups()
                             await viewModel.loadTunnels()
                             await viewModel.loadWorkflows()
+                            await viewModel.loadCredentials()
                         }
                     } label: {
                         Label("Refresh", systemImage: "arrow.clockwise")
@@ -162,6 +183,8 @@ struct ConnectionListView: View {
                 TunnelListView()
             case .workflows:
                 WorkflowListView()
+            case .credentials:
+                CredentialListView()
             case nil:
                 Text("Select an item")
                     .foregroundColor(.secondary)

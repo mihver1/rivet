@@ -16,6 +16,7 @@ class AppViewModel: ObservableObject {
     @Published var groups: [RivetGroup] = []
     @Published var tunnels: [TunnelInfo] = []
     @Published var workflows: [WorkflowSummary] = []
+    @Published var credentials: [RivetCredential] = []
     @Published var showError = false
     @Published var errorMessage = ""
     @Published var vaultStatus: VaultStatus?
@@ -49,6 +50,7 @@ class AppViewModel: ObservableObject {
                 await loadGroups()
                 await loadTunnels()
                 await loadWorkflows()
+                await loadCredentials()
             }
         } catch {
             showError(error)
@@ -132,6 +134,7 @@ class AppViewModel: ObservableObject {
             groups = []
             tunnels = []
             workflows = []
+            credentials = []
             selectedConnection = nil
             appState = .vaultLocked
         } catch {
@@ -193,7 +196,8 @@ class AppViewModel: ObservableObject {
         if connection.port != 22 {
             sshCmd += " -p \(connection.port)"
         }
-        if case .keyFile(let path, _) = connection.auth {
+        if case .inline(let method) = connection.auth,
+           case .keyFile(let path, _) = method {
             sshCmd += " -i \(path)"
         }
         sshCmd += " \(connection.username)@\(connection.host)"
@@ -323,6 +327,47 @@ class AppViewModel: ObservableObject {
         } catch {
             showError(error)
             return nil
+        }
+    }
+
+    // MARK: - Credentials
+
+    func loadCredentials() async {
+        do {
+            let creds: [RivetCredential] = try await client.call(method: "cred.list")
+            credentials = creds.sorted { $0.name < $1.name }
+        } catch {
+            showError(error)
+        }
+    }
+
+    func createCredential(name: String, auth: AuthMethod, description: String?) async {
+        struct Params: Encodable {
+            let name: String
+            let auth: AuthMethod
+            let description: String?
+        }
+        do {
+            let _: IdResult = try await client.call(
+                method: "cred.create",
+                params: Params(name: name, auth: auth, description: description)
+            )
+            await loadCredentials()
+        } catch {
+            showError(error)
+        }
+    }
+
+    func deleteCredential(_ credential: RivetCredential) async {
+        struct Params: Encodable { let id: UUID; let name: String?; let force: Bool? }
+        do {
+            try await client.callVoid(
+                method: "cred.delete",
+                params: Params(id: credential.id, name: nil, force: nil)
+            )
+            credentials.removeAll { $0.id == credential.id }
+        } catch {
+            showError(error)
         }
     }
 

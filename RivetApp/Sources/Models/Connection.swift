@@ -7,7 +7,7 @@ struct RivetConnection: Codable, Identifiable, Hashable {
     var host: String
     var port: UInt16
     var username: String
-    var auth: AuthMethod
+    var auth: AuthSource
     var tags: [String]
     var groupIds: [UUID]
     var jumpHost: UUID?

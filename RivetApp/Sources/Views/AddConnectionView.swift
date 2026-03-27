@@ -13,6 +13,7 @@ struct AddConnectionView: View {
     @State private var keyPath = ""
     @State private var keyPassphrase = ""
     @State private var agentSocketPath = ""
+    @State private var selectedCredentialId: UUID?
     @State private var tags = ""
     @State private var notes = ""
     @State private var isSubmitting = false
@@ -37,6 +38,10 @@ struct AddConnectionView: View {
                         Text("SSH Agent").tag("agent")
                         Text("Password").tag("password")
                         Text("Key File").tag("keyfile")
+                        if !viewModel.credentials.isEmpty {
+                            Divider()
+                            Text("Credential Profile").tag("profile")
+                        }
                     }
 
                     switch authType {
@@ -45,6 +50,14 @@ struct AddConnectionView: View {
                     case "keyfile":
                         TextField("Key File Path", text: $keyPath)
                         SecureField("Key Passphrase (optional)", text: $keyPassphrase)
+                    case "profile":
+                        Picker("Profile", selection: $selectedCredentialId) {
+                            Text("Select...").tag(nil as UUID?)
+                            ForEach(viewModel.credentials) { cred in
+                                Text("\(cred.name) (\(cred.auth.displayName))")
+                                    .tag(cred.id as UUID?)
+                            }
+                        }
                     default:
                         TextField("Agent Socket Path (optional)", text: $agentSocketPath)
                     }
@@ -71,27 +84,39 @@ struct AddConnectionView: View {
                 }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
-                .disabled(name.isEmpty || host.isEmpty || username.isEmpty || isSubmitting)
+                .disabled(!isFormValid || isSubmitting)
             }
             .padding()
         }
-        .frame(width: 450, height: 500)
+        .frame(width: 450, height: 520)
+        .task {
+            await viewModel.loadCredentials()
+        }
+    }
+
+    private var isFormValid: Bool {
+        guard !name.isEmpty, !host.isEmpty, !username.isEmpty else { return false }
+        if authType == "profile" && selectedCredentialId == nil { return false }
+        return true
     }
 
     private func addConnection() {
         isSubmitting = true
 
-        let authMethod: AuthMethod
+        let authSource: AuthSource
         switch authType {
         case "password":
-            authMethod = .password(password)
+            authSource = .inline(.password(password))
         case "keyfile":
-            authMethod = .keyFile(
+            authSource = .inline(.keyFile(
                 path: keyPath,
                 passphrase: keyPassphrase.isEmpty ? nil : keyPassphrase
-            )
+            ))
+        case "profile":
+            guard let credId = selectedCredentialId else { return }
+            authSource = .profile(credentialId: credId)
         default:
-            authMethod = .agent(socketPath: agentSocketPath.isEmpty ? nil : agentSocketPath)
+            authSource = .inline(.agent(socketPath: agentSocketPath.isEmpty ? nil : agentSocketPath))
         }
 
         let parsedTags = tags
@@ -104,7 +129,7 @@ struct AddConnectionView: View {
             let host: String
             let port: UInt16?
             let username: String
-            let auth: AuthMethod
+            let auth: AuthSource
             let tags: [String]?
             let notes: String?
         }
@@ -114,7 +139,7 @@ struct AddConnectionView: View {
             host: host,
             port: UInt16(port),
             username: username,
-            auth: authMethod,
+            auth: authSource,
             tags: parsedTags.isEmpty ? nil : parsedTags,
             notes: notes.isEmpty ? nil : notes
         )
