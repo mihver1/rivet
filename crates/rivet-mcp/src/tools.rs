@@ -199,6 +199,29 @@ pub fn all_tools() -> Vec<ToolDefinition> {
                 "required": ["workflow"]
             }),
         },
+        ToolDefinition {
+            name: "list_credentials".into(),
+            description: "List all saved credential profiles. Credentials are reusable authentication configurations (SSH keys, passwords, agents) that can be shared across multiple connections.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {},
+                "required": []
+            }),
+        },
+        ToolDefinition {
+            name: "show_credential".into(),
+            description: "Show detailed information about a specific credential profile, including its authentication type, description, and which connections use it.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Credential profile name"
+                    }
+                },
+                "required": ["name"]
+            }),
+        },
     ]
 }
 
@@ -227,6 +250,8 @@ pub async fn call_tool(
         "create_tunnel" => handle_create_tunnel(&mut client, arguments).await,
         "list_workflows" => handle_list_workflows(&mut client, arguments).await,
         "run_workflow" => handle_run_workflow(&mut client, arguments).await,
+        "list_credentials" => handle_list_credentials(&mut client, arguments).await,
+        "show_credential" => handle_show_credential(&mut client, arguments).await,
         _ => Err(format!("Unknown tool: {name}")),
     }
 }
@@ -829,4 +854,81 @@ async fn handle_run_workflow(
         "success": all_success,
         "results": result
     }))
+}
+
+async fn handle_list_credentials(
+    client: &mut DaemonClient,
+    _args: &Value,
+) -> Result<Value, String> {
+    let result = client
+        .call("cred.list", None)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let credentials = result
+        .as_array()
+        .ok_or("unexpected response format")?;
+
+    let mut lines = Vec::new();
+    if credentials.is_empty() {
+        lines.push("No credential profiles saved.".to_string());
+    } else {
+        lines.push(format!("{} credential(s):", credentials.len()));
+        lines.push(String::new());
+        for cred in credentials {
+            let name = cred.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+            let auth = cred.get("auth").unwrap_or(&json!(null));
+            let auth_type = if let Some(obj) = auth.as_object() {
+                obj.keys().next().map(|k| k.as_str()).unwrap_or("unknown")
+            } else {
+                "unknown"
+            };
+            let desc = cred.get("description").and_then(|v| v.as_str()).unwrap_or("");
+            let suffix = if desc.is_empty() { String::new() } else { format!(" — {desc}") };
+            lines.push(format!("- {name} ({auth_type}){suffix}"));
+        }
+    }
+
+    Ok(json!({ "text": lines.join("\n"), "credentials": result }))
+}
+
+async fn handle_show_credential(
+    client: &mut DaemonClient,
+    args: &Value,
+) -> Result<Value, String> {
+    let name = args
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or("missing required parameter: name")?;
+
+    let params = json!({ "name": name });
+    let cred = client
+        .call("cred.get", Some(params))
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let id = cred.get("id").and_then(|v| v.as_str()).unwrap_or("?");
+    let auth = cred.get("auth").unwrap_or(&json!(null));
+    let auth_type = if let Some(obj) = auth.as_object() {
+        obj.keys().next().map(|k| k.as_str()).unwrap_or("unknown")
+    } else {
+        "unknown"
+    };
+    let created = cred.get("created_at").and_then(|v| v.as_str()).unwrap_or("?");
+    let updated = cred.get("updated_at").and_then(|v| v.as_str()).unwrap_or("?");
+
+    let mut lines = vec![
+        format!("Credential: {name}"),
+        format!("ID: {id}"),
+        format!("Auth: {auth_type}"),
+    ];
+
+    if let Some(desc) = cred.get("description").and_then(|v| v.as_str()) {
+        lines.push(format!("Description: {desc}"));
+    }
+
+    lines.push(format!("Created: {created}"));
+    lines.push(format!("Updated: {updated}"));
+
+    Ok(json!({ "text": lines.join("\n"), "credential": cred }))
 }
