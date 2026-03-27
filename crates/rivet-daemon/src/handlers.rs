@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
 use serde_json::Value;
+use rivet_core::connection::AuthMethod;
+use rivet_core::credential::AuthSource;
 use rivet_core::error::RivetError;
 use rivet_core::protocol::*;
 use rivet_vault::store::VaultStore;
@@ -44,6 +46,14 @@ pub async fn dispatch(
         // Group operations (bulk)
         "group.exec" => handle_group_exec(state, params).await,
         "group.upload" => handle_group_upload(state, params).await,
+
+        // Credential operations
+        "cred.create" => handle_cred_create(state, params).await,
+        "cred.list" => handle_cred_list(state).await,
+        "cred.get" => handle_cred_get(state, params).await,
+        "cred.update" => handle_cred_update(state, params).await,
+        "cred.delete" => handle_cred_delete(state, params).await,
+        "cred.usage" => handle_cred_usage(state, params).await,
 
         // Tunnel operations
         "tunnel.create" => handle_tunnel_create(state, params).await,
@@ -551,7 +561,7 @@ async fn handle_group_exec(
         };
 
         let all_conns = vault.list_connections().map_err(to_rpc_error)?;
-        let members: Vec<_> = all_conns
+        let mut members: Vec<_> = all_conns
             .into_iter()
             .filter(|c| c.group_ids.contains(&group.id))
             .collect();
@@ -562,6 +572,10 @@ async fn handle_group_exec(
                 message: format!("group '{}' has no connections", group.name),
                 data: None,
             });
+        }
+
+        for conn in &mut members {
+            resolve_connection_auth(vault, conn)?;
         }
 
         (members, group.name)
@@ -704,7 +718,7 @@ async fn handle_group_upload(
         };
 
         let all_conns = vault.list_connections().map_err(to_rpc_error)?;
-        let members: Vec<_> = all_conns
+        let mut members: Vec<_> = all_conns
             .into_iter()
             .filter(|c| c.group_ids.contains(&group.id))
             .collect();
@@ -715,6 +729,10 @@ async fn handle_group_upload(
                 message: format!("group '{}' has no connections", group.name),
                 data: None,
             });
+        }
+
+        for conn in &mut members {
+            resolve_connection_auth(vault, conn)?;
         }
 
         (members, group.name)
@@ -832,7 +850,7 @@ async fn handle_tunnel_create(
 ) -> Result<Value, JsonRpcError> {
     let p: TunnelCreateParams = parse_params(params)?;
 
-    // Resolve connection
+    // Resolve connection and auth
     let conn = {
         let state = state.read().await;
         let vault = state
@@ -840,7 +858,7 @@ async fn handle_tunnel_create(
             .as_ref()
             .ok_or_else(|| to_rpc_error(RivetError::VaultLocked))?;
 
-        if let Some(id) = p.connection_id {
+        let mut conn = if let Some(id) = p.connection_id {
             vault.load_connection(&id).map_err(to_rpc_error)?
         } else if let Some(ref name) = p.connection_name {
             find_connection_by_name(vault, name)?
@@ -850,7 +868,9 @@ async fn handle_tunnel_create(
                 message: "either 'connection_id' or 'connection_name' is required".into(),
                 data: None,
             });
-        }
+        };
+        resolve_connection_auth(vault, &mut conn)?;
+        conn
     };
 
     // Ensure SSH session exists
@@ -932,6 +952,157 @@ async fn handle_tunnel_close(
     }
 }
 
+// --- Credentials ---
+
+async fn handle_cred_create(
+    state: &SharedState,
+    params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    let p: CredCreateParams = parse_params(params)?;
+    let mut state = state.write().await;
+    let vault = state.require_vault().map_err(to_rpc_error)?;
+
+    let existing = vault.list_credentials().map_err(to_rpc_error)?;
+    if existing.iter().any(|c| c.name == p.name) {
+        return Err(to_rpc_error(RivetError::DuplicateCredentialName(p.name.clone())));
+    }
+
+    let cred = p.into_credential();
+    let id = cred.id;
+    vault.save_credential(&cred).map_err(to_rpc_error)?;
+
+    info!(id = %id, name = %cred.name, "credential created");
+    to_value(IdResult { id })
+}
+
+async fn handle_cred_list(
+    state: &SharedState,
+) -> Result<Value, JsonRpcError> {
+    let state = state.read().await;
+    let vault = state.vault.as_ref().ok_or_else(|| to_rpc_error(RivetError::VaultLocked))?;
+    let creds = vault.list_credentials().map_err(to_rpc_error)?;
+    to_value(creds)
+}
+
+async fn handle_cred_get(
+    state: &SharedState,
+    params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    let p: CredGetParams = parse_params(params)?;
+    let state = state.read().await;
+    let vault = state.vault.as_ref().ok_or_else(|| to_rpc_error(RivetError::VaultLocked))?;
+
+    let cred = if let Some(id) = p.id {
+        vault.load_credential(&id).map_err(to_rpc_error)?
+    } else if let Some(ref name) = p.name {
+        vault.find_credential_by_name(name).map_err(to_rpc_error)?
+    } else {
+        return Err(JsonRpcError {
+            code: -32602,
+            message: "must provide 'id' or 'name'".into(),
+            data: None,
+        });
+    };
+
+    to_value(cred)
+}
+
+async fn handle_cred_update(
+    state: &SharedState,
+    params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    let p: CredUpdateParams = parse_params(params)?;
+    let mut state = state.write().await;
+    let vault = state.require_vault().map_err(to_rpc_error)?;
+
+    let mut cred = vault.load_credential(&p.id).map_err(to_rpc_error)?;
+
+    if let Some(ref new_name) = p.name {
+        if *new_name != cred.name {
+            let existing = vault.list_credentials().map_err(to_rpc_error)?;
+            if existing.iter().any(|c| c.name == *new_name && c.id != p.id) {
+                return Err(to_rpc_error(RivetError::DuplicateCredentialName(new_name.clone())));
+            }
+        }
+    }
+
+    p.apply_to(&mut cred);
+    vault.save_credential(&cred).map_err(to_rpc_error)?;
+
+    info!(id = %cred.id, name = %cred.name, "credential updated");
+    to_value(OkResult { ok: true })
+}
+
+async fn handle_cred_delete(
+    state: &SharedState,
+    params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    let p: CredDeleteParams = parse_params(params)?;
+    let mut state = state.write().await;
+    let vault = state.require_vault().map_err(to_rpc_error)?;
+
+    let cred = if let Some(id) = p.id {
+        vault.load_credential(&id).map_err(to_rpc_error)?
+    } else if let Some(ref name) = p.name {
+        vault.find_credential_by_name(name).map_err(to_rpc_error)?
+    } else {
+        return Err(JsonRpcError {
+            code: -32602,
+            message: "must provide 'id' or 'name'".into(),
+            data: None,
+        });
+    };
+
+    // Check if any connections reference this credential
+    if !p.force.unwrap_or(false) {
+        let connections = vault.list_connections().map_err(to_rpc_error)?;
+        let using: Vec<String> = connections
+            .iter()
+            .filter(|c| matches!(&c.auth, AuthSource::Profile { credential_id } if *credential_id == cred.id))
+            .map(|c| c.name.clone())
+            .collect();
+
+        if !using.is_empty() {
+            return Err(to_rpc_error(RivetError::CredentialInUse(using.join(", "))));
+        }
+    }
+
+    vault.delete_credential(&cred.id).map_err(to_rpc_error)?;
+
+    info!(id = %cred.id, name = %cred.name, "credential deleted");
+    to_value(OkResult { ok: true })
+}
+
+async fn handle_cred_usage(
+    state: &SharedState,
+    params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    let p: CredUsageParams = parse_params(params)?;
+    let state = state.read().await;
+    let vault = state.vault.as_ref().ok_or_else(|| to_rpc_error(RivetError::VaultLocked))?;
+
+    let cred = if let Some(id) = p.id {
+        vault.load_credential(&id).map_err(to_rpc_error)?
+    } else if let Some(ref name) = p.name {
+        vault.find_credential_by_name(name).map_err(to_rpc_error)?
+    } else {
+        return Err(JsonRpcError {
+            code: -32602,
+            message: "must provide 'id' or 'name'".into(),
+            data: None,
+        });
+    };
+
+    let connections = vault.list_connections().map_err(to_rpc_error)?;
+    let using: Vec<CredUsageConnection> = connections
+        .into_iter()
+        .filter(|c| matches!(&c.auth, AuthSource::Profile { credential_id } if *credential_id == cred.id))
+        .map(|c| CredUsageConnection { id: c.id, name: c.name })
+        .collect();
+
+    to_value(CredUsageResult { connections: using })
+}
+
 // --- SSH ---
 
 async fn handle_ssh_exec(
@@ -940,16 +1111,18 @@ async fn handle_ssh_exec(
 ) -> Result<Value, JsonRpcError> {
     let p: SshExecParams = parse_params(params)?;
 
-    // Load connection from vault
+    // Load connection from vault and resolve auth
     let conn = {
         let state = state.read().await;
         let vault = state
             .vault
             .as_ref()
             .ok_or_else(|| to_rpc_error(RivetError::VaultLocked))?;
-        vault
+        let mut conn = vault
             .load_connection(&p.connection_id)
-            .map_err(to_rpc_error)?
+            .map_err(to_rpc_error)?;
+        resolve_connection_auth(vault, &mut conn)?;
+        conn
     };
 
     // Get or create SSH session
@@ -999,21 +1172,16 @@ async fn handle_ssh_connect_info(
         .load_connection(&p.connection_id)
         .map_err(to_rpc_error)?;
 
-    let (key_path, agent_socket_path) = match &conn.auth {
-        rivet_core::credential::AuthSource::Inline(method) => match method {
-            rivet_core::connection::AuthMethod::KeyFile { path, .. } => {
-                (Some(path.to_string_lossy().into_owned()), None)
-            }
-            rivet_core::connection::AuthMethod::Agent { socket_path } => {
-                (None, socket_path.as_ref().map(|p| p.to_string_lossy().into_owned()))
-            }
-            _ => (None, None),
-        },
-        rivet_core::credential::AuthSource::Profile { .. } => {
-            // Profile resolution happens before this point;
-            // if we get here, the profile hasn't been resolved yet.
-            (None, None)
+    let resolved_auth = vault.resolve_auth(&conn).map_err(to_rpc_error)?;
+
+    let (key_path, agent_socket_path) = match &resolved_auth {
+        AuthMethod::KeyFile { path, .. } => {
+            (Some(path.to_string_lossy().into_owned()), None)
         }
+        AuthMethod::Agent { socket_path } => {
+            (None, socket_path.as_ref().map(|p| p.to_string_lossy().into_owned()))
+        }
+        _ => (None, None),
     };
 
     to_value(SshConnectInfoResult {
@@ -1040,9 +1208,11 @@ async fn handle_scp_upload(
             .vault
             .as_ref()
             .ok_or_else(|| to_rpc_error(RivetError::VaultLocked))?;
-        vault
+        let mut conn = vault
             .load_connection(&p.connection_id)
-            .map_err(to_rpc_error)?
+            .map_err(to_rpc_error)?;
+        resolve_connection_auth(vault, &mut conn)?;
+        conn
     };
 
     let bytes = {
@@ -1073,9 +1243,11 @@ async fn handle_scp_download(
             .vault
             .as_ref()
             .ok_or_else(|| to_rpc_error(RivetError::VaultLocked))?;
-        vault
+        let mut conn = vault
             .load_connection(&p.connection_id)
-            .map_err(to_rpc_error)?
+            .map_err(to_rpc_error)?;
+        resolve_connection_auth(vault, &mut conn)?;
+        conn
     };
 
     let bytes = {
@@ -1227,7 +1399,7 @@ async fn handle_workflow_run(
             .as_ref()
             .ok_or_else(|| to_rpc_error(RivetError::VaultLocked))?;
 
-        if let Some(conn_id) = p.connection_id {
+        let mut conns = if let Some(conn_id) = p.connection_id {
             vec![vault.load_connection(&conn_id).map_err(to_rpc_error)?]
         } else if let Some(conn_name) = &p.connection_name {
             vec![find_connection_by_name(vault, conn_name)?]
@@ -1244,7 +1416,13 @@ async fn handle_workflow_run(
                     .into(),
                 data: None,
             });
+        };
+
+        for conn in &mut conns {
+            resolve_connection_auth(vault, conn)?;
         }
+
+        conns
     };
 
     // Merge variables
@@ -1624,6 +1802,13 @@ async fn ensure_session(
         state.sessions.insert(*connection_id, session);
     }
 
+    Ok(())
+}
+
+/// Resolve a connection's auth (handling Profile -> concrete AuthMethod).
+fn resolve_connection_auth(vault: &rivet_vault::store::UnlockedVault, conn: &mut rivet_core::connection::Connection) -> Result<(), JsonRpcError> {
+    let resolved = vault.resolve_auth(conn).map_err(to_rpc_error)?;
+    conn.auth = AuthSource::Inline(resolved);
     Ok(())
 }
 
