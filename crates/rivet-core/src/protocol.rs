@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::connection::{Connection, Group, SshOptions, TunnelSpec};
-use crate::credential::AuthSource;
+use crate::connection::{AuthMethod, Connection, Group, SshOptions, TunnelSpec};
+use crate::credential::{AuthSource, Credential};
 
 // --- Paths ---
 
@@ -454,6 +454,79 @@ pub struct WorkflowImportParams {
     pub yaml: String,
 }
 
+// --- Credentials ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CredCreateParams {
+    pub name: String,
+    pub auth: AuthMethod,
+    pub description: Option<String>,
+}
+
+impl CredCreateParams {
+    pub fn into_credential(self) -> Credential {
+        let mut cred = Credential::new(self.name, self.auth);
+        cred.description = self.description;
+        cred
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CredListParams {}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CredGetParams {
+    pub id: Option<Uuid>,
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CredUpdateParams {
+    pub id: Uuid,
+    pub name: Option<String>,
+    pub auth: Option<AuthMethod>,
+    pub description: Option<Option<String>>,
+}
+
+impl CredUpdateParams {
+    pub fn apply_to(self, cred: &mut Credential) {
+        if let Some(name) = self.name {
+            cred.name = name;
+        }
+        if let Some(auth) = self.auth {
+            cred.auth = auth;
+        }
+        if let Some(desc) = self.description {
+            cred.description = desc;
+        }
+        cred.updated_at = chrono::Utc::now();
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CredDeleteParams {
+    pub id: Option<Uuid>,
+    pub name: Option<String>,
+    pub force: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CredUsageParams {
+    pub id: Option<Uuid>,
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CredUsageResult {
+    pub connections: Vec<CredUsageConnection>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CredUsageConnection {
+    pub id: Uuid,
+    pub name: String,
+}
+
 // --- Daemon ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -479,7 +552,6 @@ pub struct IdResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::connection::AuthMethod;
 
     #[test]
     fn test_json_rpc_request_roundtrip() {
