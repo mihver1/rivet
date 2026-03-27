@@ -6,7 +6,8 @@ use serde::Serialize;
 use uuid::Uuid;
 use zeroize::Zeroize;
 
-use rivet_core::connection::{Connection, Group};
+use rivet_core::connection::{AuthMethod, Connection, Group};
+use rivet_core::credential::{AuthSource, Credential};
 use rivet_core::workflow::Workflow;
 use rivet_core::error::{Result, RivetError};
 
@@ -47,6 +48,7 @@ impl VaultStore {
         fs::create_dir_all(self.vault_dir.join("groups"))?;
         fs::create_dir_all(self.vault_dir.join("keys"))?;
         fs::create_dir_all(self.vault_dir.join("workflows"))?;
+        fs::create_dir_all(self.vault_dir.join("credentials"))?;
 
         // Generate cryptographic materials
         let salt = crypto::generate_salt();
@@ -246,6 +248,43 @@ impl UnlockedVault {
             .ok_or_else(|| RivetError::WorkflowNotFound(name.into()))
     }
 
+    // --- Credential convenience ---
+
+    pub fn save_credential(&self, cred: &Credential) -> Result<()> {
+        self.save_entity("credentials", &cred.id, cred)
+    }
+
+    pub fn load_credential(&self, id: &Uuid) -> Result<Credential> {
+        self.load_entity("credentials", id)
+    }
+
+    pub fn list_credentials(&self) -> Result<Vec<Credential>> {
+        self.list_entities("credentials")
+    }
+
+    pub fn delete_credential(&self, id: &Uuid) -> Result<()> {
+        self.delete_entity("credentials", id)
+    }
+
+    pub fn find_credential_by_name(&self, name: &str) -> Result<Credential> {
+        let credentials = self.list_credentials()?;
+        credentials
+            .into_iter()
+            .find(|c| c.name == name)
+            .ok_or_else(|| RivetError::CredentialNotFound(name.into()))
+    }
+
+    /// Resolve a connection's AuthSource to a concrete AuthMethod.
+    pub fn resolve_auth(&self, conn: &Connection) -> Result<AuthMethod> {
+        match &conn.auth {
+            AuthSource::Inline(method) => Ok(method.clone()),
+            AuthSource::Profile { credential_id } => {
+                let cred = self.load_credential(credential_id)?;
+                Ok(cred.auth)
+            }
+        }
+    }
+
     // --- Password change ---
 
     pub fn change_password(&self, old_password: &str, new_password: &str) -> Result<()> {
@@ -306,7 +345,7 @@ impl UnlockedVault {
 mod tests {
     use super::*;
     use rivet_core::connection::AuthMethod;
-    use rivet_core::credential::AuthSource;
+    use rivet_core::credential::{AuthSource, Credential};
     use tempfile::TempDir;
 
     fn test_vault_dir() -> (TempDir, PathBuf) {
@@ -477,5 +516,77 @@ mod tests {
 
         let result = init_fast(&store, "pass2");
         assert!(matches!(result, Err(RivetError::VaultAlreadyInitialized)));
+    }
+
+    #[test]
+    fn test_credential_crud() {
+        let (_dir, vault_dir) = test_vault_dir();
+        let store = VaultStore::new(vault_dir);
+        init_fast(&store, "pass").unwrap();
+        let vault = store.unlock("pass").unwrap();
+
+        let cred = Credential::new("deploy-key", AuthMethod::Agent { socket_path: None });
+        let cred_id = cred.id;
+        vault.save_credential(&cred).unwrap();
+
+        let creds = vault.list_credentials().unwrap();
+        assert_eq!(creds.len(), 1);
+        assert_eq!(creds[0].name, "deploy-key");
+
+        let loaded = vault.load_credential(&cred_id).unwrap();
+        assert_eq!(loaded.name, "deploy-key");
+
+        let found = vault.find_credential_by_name("deploy-key").unwrap();
+        assert_eq!(found.id, cred_id);
+
+        vault.delete_credential(&cred_id).unwrap();
+        assert!(vault.list_credentials().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_resolve_auth_inline() {
+        let (_dir, vault_dir) = test_vault_dir();
+        let store = VaultStore::new(vault_dir);
+        init_fast(&store, "pass").unwrap();
+        let vault = store.unlock("pass").unwrap();
+
+        let conn = Connection::new("test", "host", "user");
+        let resolved = vault.resolve_auth(&conn).unwrap();
+        assert!(matches!(resolved, AuthMethod::Agent { .. }));
+    }
+
+    #[test]
+    fn test_resolve_auth_profile() {
+        let (_dir, vault_dir) = test_vault_dir();
+        let store = VaultStore::new(vault_dir);
+        init_fast(&store, "pass").unwrap();
+        let vault = store.unlock("pass").unwrap();
+
+        let cred = Credential::new("my-key", AuthMethod::Password("secret".into()));
+        vault.save_credential(&cred).unwrap();
+
+        let mut conn = Connection::new("test", "host", "user");
+        conn.auth = AuthSource::Profile { credential_id: cred.id };
+        vault.save_connection(&conn).unwrap();
+
+        let resolved = vault.resolve_auth(&conn).unwrap();
+        match resolved {
+            AuthMethod::Password(pw) => assert_eq!(pw, "secret"),
+            _ => panic!("expected Password"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_auth_missing_credential() {
+        let (_dir, vault_dir) = test_vault_dir();
+        let store = VaultStore::new(vault_dir);
+        init_fast(&store, "pass").unwrap();
+        let vault = store.unlock("pass").unwrap();
+
+        let mut conn = Connection::new("test", "host", "user");
+        conn.auth = AuthSource::Profile { credential_id: Uuid::new_v4() };
+
+        let result = vault.resolve_auth(&conn);
+        assert!(result.is_err());
     }
 }

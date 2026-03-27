@@ -47,6 +47,15 @@ pub enum RivetError {
     #[error("duplicate group name: {0}")]
     DuplicateGroupName(String),
 
+    #[error("credential not found: {0}")]
+    CredentialNotFound(String),
+
+    #[error("duplicate credential name: {0}")]
+    DuplicateCredentialName(String),
+
+    #[error("credential in use by connections: {0}")]
+    CredentialInUse(String),
+
     #[error("tunnel error: {0}")]
     TunnelError(String),
 
@@ -84,6 +93,9 @@ impl RivetError {
             Self::WorkflowNotFound(_) => -32016,
             Self::DuplicateWorkflowName(_) => -32017,
             Self::WorkflowError(_) => -32018,
+            Self::CredentialNotFound(_) => -32019,
+            Self::DuplicateCredentialName(_) => -32020,
+            Self::CredentialInUse(_) => -32021,
             Self::IoError(_) => -32603,
             Self::InternalError(_) => -32603,
         }
