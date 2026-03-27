@@ -1157,21 +1157,24 @@ async fn smoke_connection_auth_variants() {
         .await;
     assert_eq!(list.as_array().unwrap().len(), 4);
 
-    // Verify auth types roundtrip
+    // Verify auth types roundtrip — auth is now wrapped in AuthSource::Inline
     let agent = c
         .ok("conn.get", Some(json!({"id": null, "name": "agent-conn"})))
         .await;
-    assert_eq!(agent["auth"]["type"], "Agent");
+    assert_eq!(agent["auth"]["type"], "Inline");
+    assert_eq!(agent["auth"]["data"]["type"], "Agent");
 
     let password = c
         .ok("conn.get", Some(json!({"id": null, "name": "password-conn"})))
         .await;
-    assert_eq!(password["auth"]["type"], "Password");
-    assert_eq!(password["auth"]["data"], "secret123");
+    assert_eq!(password["auth"]["type"], "Inline");
+    assert_eq!(password["auth"]["data"]["type"], "Password");
+    assert_eq!(password["auth"]["data"]["data"], "secret123");
 
     let keyfile = c
         .ok("conn.get", Some(json!({"id": null, "name": "keyfile-conn"})))
         .await;
-    assert_eq!(keyfile["auth"]["type"], "KeyFile");
-    assert_eq!(keyfile["auth"]["data"]["path"], "/home/user/.ssh/id_rsa");
+    assert_eq!(keyfile["auth"]["type"], "Inline");
+    assert_eq!(keyfile["auth"]["data"]["type"], "KeyFile");
+    assert_eq!(keyfile["auth"]["data"]["data"]["path"], "/home/user/.ssh/id_rsa");
 }

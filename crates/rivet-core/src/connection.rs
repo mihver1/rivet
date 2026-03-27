@@ -4,6 +4,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::credential::AuthSource;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Connection {
     pub id: Uuid,
@@ -11,7 +13,7 @@ pub struct Connection {
     pub host: String,
     pub port: u16,
     pub username: String,
-    pub auth: AuthMethod,
+    pub auth: AuthSource,
     pub tags: Vec<String>,
     pub group_ids: Vec<Uuid>,
     pub jump_host: Option<Uuid>,
@@ -30,7 +32,7 @@ impl Connection {
             host: host.into(),
             port: 22,
             username: username.into(),
-            auth: AuthMethod::Agent { socket_path: None },
+            auth: AuthSource::Inline(AuthMethod::Agent { socket_path: None }),
             tags: Vec::new(),
             group_ids: Vec::new(),
             jump_host: None,
@@ -306,6 +308,7 @@ impl TunnelSpec {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::credential::AuthSource;
 
     #[test]
     fn test_connection_new() {
@@ -314,7 +317,10 @@ mod tests {
         assert_eq!(conn.host, "10.0.1.50");
         assert_eq!(conn.username, "deploy");
         assert_eq!(conn.port, 22);
-        assert!(matches!(conn.auth, AuthMethod::Agent { socket_path: None }));
+        assert!(matches!(
+            conn.auth,
+            AuthSource::Inline(AuthMethod::Agent { socket_path: None })
+        ));
         assert!(conn.tags.is_empty());
         assert!(conn.group_ids.is_empty());
         assert!(conn.jump_host.is_none());

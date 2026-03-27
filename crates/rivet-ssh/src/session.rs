@@ -4,6 +4,7 @@ use std::time::Duration;
 use russh::client::{self, Handle};
 use russh::{ChannelMsg, Disconnect};
 use rivet_core::connection::Connection;
+use rivet_core::credential::AuthSource;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::{debug, info};
 
@@ -39,7 +40,13 @@ impl SshSession {
 
         debug!("TCP connection established, authenticating");
 
-        let outcome = auth::authenticate(&mut handle, &conn.username, &conn.auth).await?;
+        let auth_method = match &conn.auth {
+            AuthSource::Inline(method) => method,
+            AuthSource::Profile { .. } => {
+                return Err(SshError::AuthFailed);
+            }
+        };
+        let outcome = auth::authenticate(&mut handle, &conn.username, auth_method).await?;
 
         match outcome {
             AuthOutcome::Success => {
@@ -78,7 +85,13 @@ impl SshSession {
 
         debug!("stream connection established, authenticating");
 
-        let outcome = auth::authenticate(&mut handle, &conn.username, &conn.auth).await?;
+        let auth_method = match &conn.auth {
+            AuthSource::Inline(method) => method,
+            AuthSource::Profile { .. } => {
+                return Err(SshError::AuthFailed);
+            }
+        };
+        let outcome = auth::authenticate(&mut handle, &conn.username, auth_method).await?;
 
         match outcome {
             AuthOutcome::Success => {

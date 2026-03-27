@@ -29,12 +29,15 @@ pub async fn list() -> Result<(), CliError> {
 
     for conn in &connections {
         let auth_type = match &conn.auth {
-            rivet_core::connection::AuthMethod::Password(_) => "password",
-            rivet_core::connection::AuthMethod::PrivateKey { .. } => "key",
-            rivet_core::connection::AuthMethod::KeyFile { .. } => "keyfile",
-            rivet_core::connection::AuthMethod::Agent { .. } => "agent",
-            rivet_core::connection::AuthMethod::Certificate { .. } => "cert",
-            rivet_core::connection::AuthMethod::Interactive => "interactive",
+            rivet_core::credential::AuthSource::Inline(method) => match method {
+                rivet_core::connection::AuthMethod::Password(_) => "password",
+                rivet_core::connection::AuthMethod::PrivateKey { .. } => "key",
+                rivet_core::connection::AuthMethod::KeyFile { .. } => "keyfile",
+                rivet_core::connection::AuthMethod::Agent { .. } => "agent",
+                rivet_core::connection::AuthMethod::Certificate { .. } => "cert",
+                rivet_core::connection::AuthMethod::Interactive => "interactive",
+            },
+            rivet_core::credential::AuthSource::Profile { .. } => "profile",
         };
 
         table.add_row(vec![
@@ -113,7 +116,9 @@ pub async fn add() -> Result<(), CliError> {
         "2" => {
             let password = rpassword::prompt_password("Password: ")
                 .map_err(|e| CliError::Other(e.to_string()))?;
-            rivet_core::connection::AuthMethod::Password(password)
+            rivet_core::credential::AuthSource::Inline(
+                rivet_core::connection::AuthMethod::Password(password),
+            )
         }
         "3" => {
             let path = prompt("Key file path: ")?;
@@ -124,10 +129,12 @@ pub async fn add() -> Result<(), CliError> {
             } else {
                 Some(passphrase_str)
             };
-            rivet_core::connection::AuthMethod::KeyFile {
-                path: path.into(),
-                passphrase,
-            }
+            rivet_core::credential::AuthSource::Inline(
+                rivet_core::connection::AuthMethod::KeyFile {
+                    path: path.into(),
+                    passphrase,
+                },
+            )
         }
         _ => {
             let socket_str = prompt("Agent socket path (empty for default SSH_AUTH_SOCK): ")?;
@@ -136,7 +143,9 @@ pub async fn add() -> Result<(), CliError> {
             } else {
                 Some(std::path::PathBuf::from(socket_str))
             };
-            rivet_core::connection::AuthMethod::Agent { socket_path }
+            rivet_core::credential::AuthSource::Inline(
+                rivet_core::connection::AuthMethod::Agent { socket_path },
+            )
         }
     };
 

@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use rivet_core::connection::{AuthMethod, Connection, SshOptions};
+use rivet_core::credential::AuthSource;
 use rivet_core::error::Result;
 
 use crate::store::UnlockedVault;
@@ -146,7 +147,7 @@ impl SshConfigEntry {
 
         let mut conn = Connection::new(self.name, host, username);
         conn.port = self.port.unwrap_or(22);
-        conn.auth = auth;
+        conn.auth = AuthSource::Inline(auth);
         conn.options = SshOptions {
             keepalive_interval: self.keepalive_interval.or(Some(30)),
             keepalive_count_max: self.keepalive_count_max.or(Some(3)),
@@ -190,17 +191,20 @@ Host staging
         assert_eq!(connections[0].username, "deploy");
         assert_eq!(connections[0].port, 2222);
         match &connections[0].auth {
-            AuthMethod::KeyFile { path, .. } => {
+            AuthSource::Inline(AuthMethod::KeyFile { path, .. }) => {
                 assert!(path.to_string_lossy().contains("id_ed25519"));
             }
-            _ => panic!("expected KeyFile auth"),
+            _ => panic!("expected Inline(KeyFile) auth"),
         }
 
         assert_eq!(connections[1].name, "staging");
         assert_eq!(connections[1].host, "staging.example.com");
         assert_eq!(connections[1].username, "admin");
         assert_eq!(connections[1].port, 22);
-        assert!(matches!(connections[1].auth, AuthMethod::Agent { socket_path: None }));
+        assert!(matches!(
+            connections[1].auth,
+            AuthSource::Inline(AuthMethod::Agent { socket_path: None })
+        ));
     }
 
     #[test]

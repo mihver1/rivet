@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::connection::{AuthMethod, Connection, Group, SshOptions, TunnelSpec};
+use crate::connection::{Connection, Group, SshOptions, TunnelSpec};
+use crate::credential::AuthSource;
 
 // --- Paths ---
 
@@ -137,7 +138,7 @@ pub struct ConnCreateParams {
     pub host: String,
     pub port: Option<u16>,
     pub username: String,
-    pub auth: AuthMethod,
+    pub auth: AuthSource,
     pub tags: Option<Vec<String>>,
     pub group_ids: Option<Vec<Uuid>>,
     pub jump_host: Option<Uuid>,
@@ -170,7 +171,7 @@ pub struct ConnUpdateParams {
     pub host: Option<String>,
     pub port: Option<u16>,
     pub username: Option<String>,
-    pub auth: Option<AuthMethod>,
+    pub auth: Option<AuthSource>,
     pub tags: Option<Vec<String>>,
     pub group_ids: Option<Vec<Uuid>>,
     pub jump_host: Option<Option<Uuid>>,
@@ -478,6 +479,7 @@ pub struct IdResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::connection::AuthMethod;
 
     #[test]
     fn test_json_rpc_request_roundtrip() {
@@ -534,7 +536,7 @@ mod tests {
             host: "example.com".into(),
             port: Some(2222),
             username: "admin".into(),
-            auth: AuthMethod::Agent { socket_path: None },
+            auth: AuthSource::Inline(AuthMethod::Agent { socket_path: None }),
             tags: Some(vec!["prod".into()]),
             group_ids: None,
             jump_host: None,

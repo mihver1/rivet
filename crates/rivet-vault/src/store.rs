@@ -306,6 +306,7 @@ impl UnlockedVault {
 mod tests {
     use super::*;
     use rivet_core::connection::AuthMethod;
+    use rivet_core::credential::AuthSource;
     use tempfile::TempDir;
 
     fn test_vault_dir() -> (TempDir, PathBuf) {
@@ -402,12 +403,12 @@ mod tests {
         let vault = store.unlock("pass").unwrap();
 
         let mut conn = Connection::new("pw-server", "host", "user");
-        conn.auth = AuthMethod::Password("secret123".into());
+        conn.auth = AuthSource::Inline(AuthMethod::Password("secret123".into()));
         vault.save_connection(&conn).unwrap();
 
         let loaded = vault.load_connection(&conn.id).unwrap();
         match &loaded.auth {
-            AuthMethod::Password(pw) => assert_eq!(pw, "secret123"),
+            AuthSource::Inline(AuthMethod::Password(pw)) => assert_eq!(pw, "secret123"),
             _ => panic!("wrong auth method"),
         }
     }
