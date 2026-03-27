@@ -1178,3 +1178,126 @@ async fn smoke_connection_auth_variants() {
     assert_eq!(keyfile["auth"]["data"]["type"], "KeyFile");
     assert_eq!(keyfile["auth"]["data"]["data"]["path"], "/home/user/.ssh/id_rsa");
 }
+
+// ---------------------------------------------------------------------------
+// Credential CRUD
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn smoke_credential_create_and_list() {
+    let (_d, mut c) = setup().await;
+
+    let result = c.ok("cred.create", Some(json!({
+        "name": "deploy-key",
+        "auth": {"type": "Agent", "data": {"socket_path": null}},
+        "description": "Deploy SSH agent"
+    }))).await;
+    assert!(result.get("id").is_some());
+
+    let creds = c.ok("cred.list", Some(json!({}))).await;
+    let creds = creds.as_array().unwrap();
+    assert_eq!(creds.len(), 1);
+    assert_eq!(creds[0]["name"], "deploy-key");
+}
+
+#[tokio::test]
+async fn smoke_credential_get_and_update() {
+    let (_d, mut c) = setup().await;
+
+    let result = c.ok("cred.create", Some(json!({
+        "name": "test-cred",
+        "auth": {"type": "Password", "data": "secret"}
+    }))).await;
+    let id = result["id"].as_str().unwrap();
+
+    // Get by name
+    let cred = c.ok("cred.get", Some(json!({"name": "test-cred"}))).await;
+    assert_eq!(cred["name"], "test-cred");
+
+    // Update name
+    c.ok("cred.update", Some(json!({"id": id, "name": "renamed-cred"}))).await;
+    let cred = c.ok("cred.get", Some(json!({"id": id}))).await;
+    assert_eq!(cred["name"], "renamed-cred");
+}
+
+#[tokio::test]
+async fn smoke_credential_delete() {
+    let (_d, mut c) = setup().await;
+
+    c.ok("cred.create", Some(json!({
+        "name": "to-delete",
+        "auth": {"type": "Agent", "data": {"socket_path": null}}
+    }))).await;
+
+    c.ok("cred.delete", Some(json!({"name": "to-delete"}))).await;
+
+    let creds = c.ok("cred.list", Some(json!({}))).await;
+    assert_eq!(creds.as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn smoke_credential_duplicate_name() {
+    let (_d, mut c) = setup().await;
+
+    c.ok("cred.create", Some(json!({
+        "name": "dup",
+        "auth": {"type": "Agent", "data": {"socket_path": null}}
+    }))).await;
+
+    // Should fail with DuplicateCredentialName (-32020)
+    let code = c.err("cred.create", Some(json!({
+        "name": "dup",
+        "auth": {"type": "Agent", "data": {"socket_path": null}}
+    }))).await;
+    assert_eq!(code, -32020);
+}
+
+#[tokio::test]
+async fn smoke_credential_usage() {
+    let (_d, mut c) = setup().await;
+
+    let cred_result = c.ok("cred.create", Some(json!({
+        "name": "shared-key",
+        "auth": {"type": "Agent", "data": {"socket_path": null}}
+    }))).await;
+    let cred_id = cred_result["id"].as_str().unwrap();
+
+    // Create connection using this credential
+    c.ok("conn.create", Some(json!({
+        "name": "server1",
+        "host": "10.0.0.1",
+        "username": "admin",
+        "auth": {"type": "Profile", "data": {"credential_id": cred_id}}
+    }))).await;
+
+    // Check usage
+    let usage = c.ok("cred.usage", Some(json!({"name": "shared-key"}))).await;
+    let connections = usage["connections"].as_array().unwrap();
+    assert_eq!(connections.len(), 1);
+    assert_eq!(connections[0]["name"], "server1");
+}
+
+#[tokio::test]
+async fn smoke_credential_delete_blocked_when_in_use() {
+    let (_d, mut c) = setup().await;
+
+    let cred_result = c.ok("cred.create", Some(json!({
+        "name": "in-use",
+        "auth": {"type": "Agent", "data": {"socket_path": null}}
+    }))).await;
+    let cred_id = cred_result["id"].as_str().unwrap();
+
+    c.ok("conn.create", Some(json!({
+        "name": "linked-server",
+        "host": "10.0.0.1",
+        "username": "admin",
+        "auth": {"type": "Profile", "data": {"credential_id": cred_id}}
+    }))).await;
+
+    // Delete should fail without force (-32021 = CredentialInUse)
+    let code = c.err("cred.delete", Some(json!({"name": "in-use"}))).await;
+    assert_eq!(code, -32021);
+
+    // Delete with force should succeed
+    c.ok("cred.delete", Some(json!({"name": "in-use", "force": true}))).await;
+}
