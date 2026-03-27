@@ -1,0 +1,16 @@
+[package]
+name = "rivet-ssh"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rivet-core = { path = "../rivet-core" }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+russh = "0.58"
+russh-sftp = "2.1"
+
+[dev-dependencies]
+tokio = { workspace = true }

@@ -1,0 +1,60 @@
+<svg width="1280" height="400" viewBox="0 0 1280 400" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="badge-bg" x1="46" y1="26" x2="326" y2="346" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0B1322"/>
+      <stop offset="0.55" stop-color="#132138"/>
+      <stop offset="1" stop-color="#1E3148"/>
+    </linearGradient>
+    <linearGradient id="badge-panel" x1="70" y1="48" x2="302" y2="322" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#14233C"/>
+      <stop offset="1" stop-color="#0E1729"/>
+    </linearGradient>
+    <linearGradient id="badge-copper" x1="92" y1="88" x2="278" y2="304" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFD08A"/>
+      <stop offset="0.46" stop-color="#FF9E59"/>
+      <stop offset="1" stop-color="#E56541"/>
+    </linearGradient>
+    <linearGradient id="badge-steel" x1="175" y1="150" x2="222" y2="199" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F7FAFD"/>
+      <stop offset="1" stop-color="#A7B3C5"/>
+    </linearGradient>
+    <radialGradient id="badge-glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(108 95) rotate(47) scale(172 135)">
+      <stop offset="0" stop-color="#3DE2D0" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#3DE2D0" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="badge-shadow" x="58" y="64" width="236" height="246" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="10"/>
+      <feGaussianBlur stdDeviation="10"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.0156863 0 0 0 0 0.0392157 0 0 0 0 0.0901961 0 0 0 0.3 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_1_2"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_1_2" result="shape"/>
+    </filter>
+  </defs>
+
+  <rect width="1280" height="400" rx="36" fill="#F5F7FA"/>
+
+  <g transform="translate(24 24)">
+    <rect x="0" y="0" width="352" height="352" rx="88" fill="url(#badge-bg)"/>
+    <rect x="12" y="12" width="328" height="328" rx="74" fill="url(#badge-panel)" stroke="#6D7A90" stroke-opacity="0.18" stroke-width="1.5"/>
+    <path d="M37 85C82 32 159 16 256 36C195 27 147 43 115 77C81 114 73 161 69 202C56 169 45 129 37 85Z" fill="url(#badge-glow)"/>
+    <path d="M248 66C281 88 301 124 312 170" stroke="#35D7CC" stroke-opacity="0.55" stroke-width="4" stroke-linecap="round"/>
+
+    <g filter="url(#badge-shadow)">
+      <rect x="73" y="74" width="52" height="212" rx="26" fill="url(#badge-copper)"/>
+      <path d="M109 74H168C221 74 256 105 256 148C256 190 221 222 168 222H109V179H162C193 179 213 167 213 148C213 128 193 116 162 116H109V74Z" fill="url(#badge-copper)"/>
+      <path d="M152 168L235 251" stroke="url(#badge-copper)" stroke-width="50" stroke-linecap="round"/>
+      <circle cx="166" cy="148" r="20" fill="url(#badge-steel)"/>
+      <circle cx="166" cy="148" r="7.5" fill="#0E1628" fill-opacity="0.56"/>
+      <circle cx="91" cy="101" r="5.5" fill="#0C1220" fill-opacity="0.34"/>
+      <circle cx="91" cy="147" r="5.5" fill="#0C1220" fill-opacity="0.34"/>
+      <circle cx="91" cy="193" r="5.5" fill="#0C1220" fill-opacity="0.34"/>
+    </g>
+
+    <rect x="12" y="12" width="328" height="328" rx="74" stroke="white" stroke-opacity="0.06" stroke-width="2"/>
+  </g>
+
+  <text x="430" y="218" fill="#0F172A" font-family="Avenir Next, SF Pro Display, Helvetica Neue, Arial, sans-serif" font-size="156" font-weight="800" letter-spacing="14">RIVET</text>
+  <text x="434" y="272" fill="#64748B" font-family="Avenir Next, SF Pro Text, Helvetica Neue, Arial, sans-serif" font-size="30" font-weight="700" letter-spacing="7">SECURE SSH CONNECTIONS</text>
+</svg>

@@ -1,24 +1,26 @@
 [package]
-name = "shelly-workspace-tests"
+name = "rivet-workspace-tests"
 version = "0.1.0"
 edition = "2024"
 
 [workspace]
 resolver = "2"
 members = [
-    "crates/shelly-core",
-    "crates/shelly-vault",
-    "crates/shelly-ssh",
-    "crates/shelly-daemon",
-    "crates/shelly-cli",
-    "crates/shelly-mcp",
+    "crates/rivet-core",
+    "crates/rivet-vault",
+    "crates/rivet-ssh",
+    "crates/rivet-daemon",
+    "crates/rivet-cli",
+    "crates/rivet-mcp",
 ]
 
 [dependencies]
-shelly-core = { path = "crates/shelly-core" }
-shelly-vault = { path = "crates/shelly-vault" }
-shelly-ssh = { path = "crates/shelly-ssh" }
+rivet-core = { path = "crates/rivet-core" }
+rivet-vault = { path = "crates/rivet-vault" }
+rivet-ssh = { path = "crates/rivet-ssh" }
+rivet-daemon = { path = "crates/rivet-daemon" }
 tokio = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
 tempfile = "3"

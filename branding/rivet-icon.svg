@@ -1,0 +1,53 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="64" y1="40" x2="448" y2="472" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0B1322"/>
+      <stop offset="0.55" stop-color="#132138"/>
+      <stop offset="1" stop-color="#1E3148"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="96" y1="72" x2="416" y2="440" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#14233C"/>
+      <stop offset="1" stop-color="#0E1729"/>
+    </linearGradient>
+    <linearGradient id="copper" x1="124" y1="102" x2="356" y2="380" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFD08A"/>
+      <stop offset="0.46" stop-color="#FF9E59"/>
+      <stop offset="1" stop-color="#E56541"/>
+    </linearGradient>
+    <linearGradient id="steel" x1="224" y1="184" x2="282" y2="242" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F7FAFD"/>
+      <stop offset="1" stop-color="#A7B3C5"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(150 118) rotate(47) scale(245 190)">
+      <stop offset="0" stop-color="#3DE2D0" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#3DE2D0" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="88" y="82" width="328" height="338" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="14"/>
+      <feGaussianBlur stdDeviation="14"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.0156863 0 0 0 0 0.0392157 0 0 0 0 0.0901961 0 0 0 0.35 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_1_2"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_1_2" result="shape"/>
+    </filter>
+  </defs>
+
+  <rect x="24" y="24" width="464" height="464" rx="116" fill="url(#bg)"/>
+  <rect x="40" y="40" width="432" height="432" rx="98" fill="url(#panel)" stroke="#6D7A90" stroke-opacity="0.18" stroke-width="1.5"/>
+  <path d="M72 120C131 51 233 30 361 56C280 44 216 66 174 111C129 159 119 220 113 272C96 229 82 176 72 120Z" fill="url(#glow)"/>
+  <path d="M338 94C383 125 412 173 426 233" stroke="#35D7CC" stroke-opacity="0.55" stroke-width="6" stroke-linecap="round"/>
+
+  <g filter="url(#shadow)">
+    <rect x="118" y="102" width="74" height="308" rx="37" fill="url(#copper)"/>
+    <path d="M170 102H256C333 102 384 147 384 208C384 269 333 314 256 314H170V252H248C294 252 322 235 322 208C322 181 294 164 248 164H170V102Z" fill="url(#copper)"/>
+    <path d="M232 236L352 356" stroke="url(#copper)" stroke-width="72" stroke-linecap="round"/>
+    <circle cx="252" cy="208" r="28" fill="url(#steel)"/>
+    <circle cx="252" cy="208" r="11" fill="#0E1628" fill-opacity="0.56"/>
+    <circle cx="143" cy="142" r="8" fill="#0C1220" fill-opacity="0.34"/>
+    <circle cx="143" cy="208" r="8" fill="#0C1220" fill-opacity="0.34"/>
+    <circle cx="143" cy="274" r="8" fill="#0C1220" fill-opacity="0.34"/>
+  </g>
+
+  <rect x="40" y="40" width="432" height="432" rx="98" stroke="white" stroke-opacity="0.06" stroke-width="3"/>
+</svg>

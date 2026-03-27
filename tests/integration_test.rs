@@ -5,7 +5,7 @@
 
 use serde_json::Value;
 
-use shelly_core::protocol::*;
+use rivet_core::protocol::*;
 
 #[tokio::test]
 async fn test_daemon_status_and_vault_lifecycle() {
@@ -13,18 +13,18 @@ async fn test_daemon_status_and_vault_lifecycle() {
     let vault_path = dir.path().join("vault");
 
     // Vault store lifecycle
-    let store = shelly_vault::store::VaultStore::new(vault_path.clone());
+    let store = rivet_vault::store::VaultStore::new(vault_path.clone());
     assert!(!store.is_initialized());
 
     store.init("test-password-123").unwrap();
     assert!(store.is_initialized());
 
     // Unlock
-    let store = shelly_vault::store::VaultStore::new(vault_path.clone());
+    let store = rivet_vault::store::VaultStore::new(vault_path.clone());
     let vault = store.unlock("test-password-123").unwrap();
 
     // Create connection
-    let conn = shelly_core::connection::Connection::new("test-server", "10.0.0.1", "admin");
+    let conn = rivet_core::connection::Connection::new("test-server", "10.0.0.1", "admin");
     let conn_id = conn.id;
     vault.save_connection(&conn).unwrap();
 
@@ -60,7 +60,7 @@ async fn test_daemon_status_and_vault_lifecycle() {
     let vault = store.unlock("test-password-123").unwrap();
 
     // Wrong password should fail
-    let store2 = shelly_vault::store::VaultStore::new(vault_path.clone());
+    let store2 = rivet_vault::store::VaultStore::new(vault_path.clone());
     assert!(store2.unlock("wrong-password").is_err());
 
     // Change password
@@ -131,9 +131,9 @@ async fn test_connection_crud_full_lifecycle() {
     let dir = tempfile::TempDir::new().unwrap();
     let vault_path = dir.path().join("vault");
 
-    let store = shelly_vault::store::VaultStore::new(vault_path);
+    let store = rivet_vault::store::VaultStore::new(vault_path);
     store.init("pwd").unwrap();
-    let store = shelly_vault::store::VaultStore::new(dir.path().join("vault"));
+    let store = rivet_vault::store::VaultStore::new(dir.path().join("vault"));
     let vault = store.unlock("pwd").unwrap();
 
     // Create multiple connections
@@ -141,7 +141,7 @@ async fn test_connection_crud_full_lifecycle() {
     let mut ids = Vec::new();
 
     for name in &names {
-        let mut conn = shelly_core::connection::Connection::new(*name, "10.0.0.1", "deploy");
+        let mut conn = rivet_core::connection::Connection::new(*name, "10.0.0.1", "deploy");
         conn.tags = vec!["prod".into()];
         ids.push(conn.id);
         vault.save_connection(&conn).unwrap();
@@ -163,7 +163,7 @@ async fn test_connection_crud_full_lifecycle() {
     assert_eq!(vault.list_connections().unwrap().len(), 3);
 
     // Group CRUD
-    let group = shelly_core::connection::Group::new("production");
+    let group = rivet_core::connection::Group::new("production");
     let group_id = group.id;
     vault.save_group(&group).unwrap();
 
@@ -201,13 +201,13 @@ Host *
     )
     .unwrap();
 
-    let store = shelly_vault::store::VaultStore::new(vault_path);
+    let store = rivet_vault::store::VaultStore::new(vault_path);
     store.init("pwd").unwrap();
-    let store = shelly_vault::store::VaultStore::new(dir.path().join("vault"));
+    let store = rivet_vault::store::VaultStore::new(dir.path().join("vault"));
     let vault = store.unlock("pwd").unwrap();
 
     let imported =
-        shelly_vault::import::import_ssh_config_to_vault(&vault, &config_path).unwrap();
+        rivet_vault::import::import_ssh_config_to_vault(&vault, &config_path).unwrap();
     assert_eq!(imported, 2); // wildcard host skipped
 
     let connections = vault.list_connections().unwrap();
@@ -220,7 +220,7 @@ Host *
 
     // Second import should not duplicate
     let imported2 =
-        shelly_vault::import::import_ssh_config_to_vault(&vault, &config_path).unwrap();
+        rivet_vault::import::import_ssh_config_to_vault(&vault, &config_path).unwrap();
     assert_eq!(imported2, 0);
     assert_eq!(vault.list_connections().unwrap().len(), 2);
 }

@@ -21,8 +21,8 @@ DerivedData/
 *.swo
 *~
 
-# Shelly runtime
-.shelly/
+# Rivet runtime
+.rivet/
 
 # Superpowers brainstorm
 .superpowers/

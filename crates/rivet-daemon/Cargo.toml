@@ -1,0 +1,26 @@
+[package]
+name = "rivet-daemon"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "rivet_daemon"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rivetd"
+path = "src/main.rs"
+
+[dependencies]
+rivet-core = { path = "../rivet-core" }
+rivet-vault = { path = "../rivet-vault" }
+rivet-ssh = { path = "../rivet-ssh" }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+dirs = { workspace = true }
+serde_yaml = { workspace = true }
