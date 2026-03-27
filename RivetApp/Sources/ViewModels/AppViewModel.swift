@@ -341,21 +341,17 @@ class AppViewModel: ObservableObject {
         }
     }
 
-    func createCredential(name: String, auth: AuthMethod, description: String?) async {
+    func createCredential(name: String, auth: AuthMethod, description: String?) async throws {
         struct Params: Encodable {
             let name: String
             let auth: AuthMethod
             let description: String?
         }
-        do {
-            let _: IdResult = try await client.call(
-                method: "cred.create",
-                params: Params(name: name, auth: auth, description: description)
-            )
-            await loadCredentials()
-        } catch {
-            showError(error)
-        }
+        let _: IdResult = try await client.call(
+            method: "cred.create",
+            params: Params(name: name, auth: auth, description: description)
+        )
+        await loadCredentials()
     }
 
     func deleteCredential(_ credential: RivetCredential) async {

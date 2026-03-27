@@ -17,6 +17,7 @@ struct AddConnectionView: View {
     @State private var tags = ""
     @State private var notes = ""
     @State private var isSubmitting = false
+    @State private var errorMessage: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -70,6 +71,13 @@ struct AddConnectionView: View {
                 }
             }
             .formStyle(.grouped)
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .foregroundColor(.red)
+                    .font(.caption)
+                    .padding(.horizontal)
+            }
 
             HStack {
                 Button("Cancel") {
@@ -152,6 +160,8 @@ struct AddConnectionView: View {
                 await viewModel.loadConnections()
                 dismiss()
             } catch {
+                print("[AddConnection] Error: \(error)")
+                errorMessage = "\(error)"
                 isSubmitting = false
             }
         }

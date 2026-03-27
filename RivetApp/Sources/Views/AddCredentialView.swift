@@ -12,6 +12,7 @@ struct AddCredentialView: View {
     @State private var keyPassphrase = ""
     @State private var agentSocketPath = ""
     @State private var isSubmitting = false
+    @State private var errorMessage: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -45,6 +46,13 @@ struct AddCredentialView: View {
                 }
             }
             .formStyle(.grouped)
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .foregroundColor(.red)
+                    .font(.caption)
+                    .padding(.horizontal)
+            }
 
             HStack {
                 Button("Cancel") {
@@ -83,12 +91,18 @@ struct AddCredentialView: View {
         }
 
         Task {
-            await viewModel.createCredential(
-                name: name,
-                auth: authMethod,
-                description: description.isEmpty ? nil : description
-            )
-            dismiss()
+            do {
+                try await viewModel.createCredential(
+                    name: name,
+                    auth: authMethod,
+                    description: description.isEmpty ? nil : description
+                )
+                dismiss()
+            } catch {
+                print("[AddCredential] Error: \(error)")
+                errorMessage = "\(error)"
+                isSubmitting = false
+            }
         }
     }
 }
