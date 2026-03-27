@@ -68,7 +68,7 @@ pub async fn show(args: &[String]) -> Result<(), CliError> {
 
     println!("Name:        {}", cred.name);
     println!("ID:          {}", cred.id);
-    println!("Auth:        {:?}", cred.auth);
+    println!("Auth:        {}", format_auth_display(&cred.auth));
     if let Some(ref desc) = cred.description {
         println!("Description: {desc}");
     }
@@ -250,6 +250,35 @@ pub async fn rm(args: &[String]) -> Result<(), CliError> {
 
     println!("Credential '{}' deleted.", name);
     Ok(())
+}
+
+fn format_auth_display(auth: &rivet_core::connection::AuthMethod) -> String {
+    match auth {
+        rivet_core::connection::AuthMethod::Password(_) => "Password (****)".to_string(),
+        rivet_core::connection::AuthMethod::PrivateKey { passphrase, .. } => {
+            if passphrase.is_some() {
+                "Private Key (with passphrase)".to_string()
+            } else {
+                "Private Key".to_string()
+            }
+        }
+        rivet_core::connection::AuthMethod::KeyFile { path, passphrase } => {
+            let p = path.display();
+            if passphrase.is_some() {
+                format!("Key File: {p} (with passphrase)")
+            } else {
+                format!("Key File: {p}")
+            }
+        }
+        rivet_core::connection::AuthMethod::Agent { socket_path } => match socket_path {
+            Some(p) => format!("SSH Agent ({})", p.display()),
+            None => "SSH Agent (default)".to_string(),
+        },
+        rivet_core::connection::AuthMethod::Certificate { cert_path, key_path } => {
+            format!("Certificate: {} + {}", cert_path.display(), key_path.display())
+        }
+        rivet_core::connection::AuthMethod::Interactive => "Interactive".to_string(),
+    }
 }
 
 fn prompt(msg: &str) -> Result<String, CliError> {

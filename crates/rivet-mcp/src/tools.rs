@@ -326,11 +326,7 @@ async fn handle_show_connection(
     let user = conn.get("username").and_then(|v| v.as_str()).unwrap_or("?");
     let auth = conn.get("auth_method").unwrap_or(&json!(null));
 
-    let auth_type = if let Some(obj) = auth.as_object() {
-        obj.keys().next().map(|k| k.as_str()).unwrap_or("unknown")
-    } else {
-        "unknown"
-    };
+    let auth_type = auth.get("type").and_then(|v| v.as_str()).unwrap_or("unknown");
 
     let mut lines = vec![
         format!("Connection: {name}"),
@@ -878,11 +874,7 @@ async fn handle_list_credentials(
         for cred in credentials {
             let name = cred.get("name").and_then(|v| v.as_str()).unwrap_or("?");
             let auth = cred.get("auth").unwrap_or(&json!(null));
-            let auth_type = if let Some(obj) = auth.as_object() {
-                obj.keys().next().map(|k| k.as_str()).unwrap_or("unknown")
-            } else {
-                "unknown"
-            };
+            let auth_type = auth.get("type").and_then(|v| v.as_str()).unwrap_or("unknown");
             let desc = cred.get("description").and_then(|v| v.as_str()).unwrap_or("");
             let suffix = if desc.is_empty() { String::new() } else { format!(" — {desc}") };
             lines.push(format!("- {name} ({auth_type}){suffix}"));
@@ -909,11 +901,7 @@ async fn handle_show_credential(
 
     let id = cred.get("id").and_then(|v| v.as_str()).unwrap_or("?");
     let auth = cred.get("auth").unwrap_or(&json!(null));
-    let auth_type = if let Some(obj) = auth.as_object() {
-        obj.keys().next().map(|k| k.as_str()).unwrap_or("unknown")
-    } else {
-        "unknown"
-    };
+    let auth_type = auth.get("type").and_then(|v| v.as_str()).unwrap_or("unknown");
     let created = cred.get("created_at").and_then(|v| v.as_str()).unwrap_or("?");
     let updated = cred.get("updated_at").and_then(|v| v.as_str()).unwrap_or("?");
 
