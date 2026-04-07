@@ -66,12 +66,25 @@ class AppViewModel: ObservableObject {
     func startDaemon() async {
         appState = .connecting
 
-        // Look for rivetd: first in app bundle, then in /usr/local/bin, then via PATH
+        // Look for rivetd: in app bundle, cargo target dir, /usr/local/bin, then PATH
         let candidates: [String] = {
             var paths: [String] = []
             // Inside .app bundle (DMG install)
             if let bundlePath = Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("rivetd").path {
                 paths.append(bundlePath)
+            }
+            // Cargo build output (development)
+            if let bundleURL = Bundle.main.executableURL {
+                // Walk up from the executable to find a Cargo workspace root with target/release/rivetd
+                var dir = bundleURL.deletingLastPathComponent()
+                for _ in 0..<6 {
+                    let candidate = dir.appendingPathComponent("target/release/rivetd").path
+                    if FileManager.default.isExecutableFile(atPath: candidate) {
+                        paths.append(candidate)
+                        break
+                    }
+                    dir = dir.deletingLastPathComponent()
+                }
             }
             paths.append("/usr/local/bin/rivetd")
             return paths
@@ -88,23 +101,50 @@ class AppViewModel: ObservableObject {
             process.arguments = ["rivetd"]
         }
         process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
+        let stderrPipe = Pipe()
+        process.standardError = stderrPipe
 
         do {
             try process.run()
 
+            // Give daemon a moment, then check if it crashed immediately
+            try await Task.sleep(nanoseconds: 300_000_000) // 0.3s
+            if !process.isRunning {
+                let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+                let stderrText = String(data: stderrData, encoding: .utf8) ?? ""
+                let message = stderrText.isEmpty
+                    ? "rivetd exited immediately (code \(process.terminationStatus))"
+                    : "rivetd failed: \(stderrText.prefix(500))"
+                appState = .daemonOffline
+                showError(DaemonClientError.rpcError(code: -1, message: message))
+                return
+            }
+
             // Wait for daemon to start with retries
             for attempt in 1...5 {
-                try await Task.sleep(nanoseconds: UInt64(attempt) * 500_000_000) // 0.5s, 1s, 1.5s...
+                try await Task.sleep(nanoseconds: UInt64(attempt) * 500_000_000)
                 do {
                     try await client.connect()
                     await refreshStatus()
                     return
                 } catch {
-                    // Retry
+                    if !process.isRunning {
+                        let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+                        let stderrText = String(data: stderrData, encoding: .utf8) ?? ""
+                        let message = stderrText.isEmpty
+                            ? "rivetd exited (code \(process.terminationStatus))"
+                            : "rivetd failed: \(stderrText.prefix(500))"
+                        appState = .daemonOffline
+                        showError(DaemonClientError.rpcError(code: -1, message: message))
+                        return
+                    }
                 }
             }
             appState = .daemonOffline
+            showError(DaemonClientError.rpcError(
+                code: -1,
+                message: "rivetd started but socket connection timed out"
+            ))
         } catch {
             appState = .daemonOffline
             showError(error)
