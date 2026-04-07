@@ -17,7 +17,6 @@ actor DaemonClient {
     func connect() async throws {
         let endpoint = NWEndpoint.unix(path: socketPath)
         let params = NWParameters()
-        params.defaultProtocolStack.transportProtocol = NWProtocolTCP.Options()
 
         let conn = NWConnection(to: endpoint, using: params)
         self.connection = conn
