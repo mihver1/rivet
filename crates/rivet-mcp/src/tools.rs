@@ -715,9 +715,8 @@ async fn handle_create_tunnel(
             format!("-L {local_port}:{rh}:{rp}")
         }
         "remote" => {
-            let lh = args.get("remote_host").and_then(|v| v.as_str()).unwrap_or("localhost");
             let rp = args.get("remote_port").and_then(|v| v.as_u64()).unwrap_or(0);
-            format!("-R {rp}:{lh}:{local_port}")
+            format!("-R {rp}:localhost:{local_port}")
         }
         "dynamic" => format!("-D {local_port}"),
         _ => "?".to_string(),

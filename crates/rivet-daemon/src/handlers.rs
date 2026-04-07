@@ -667,8 +667,19 @@ async fn exec_on_host(
     // Execute
     let result = {
         let state = state.read().await;
-        let session = state.sessions.get(&conn.id).unwrap();
-        session.exec(command).await
+        match state.sessions.get(&conn.id) {
+            Some(session) => session.exec(command).await,
+            None => {
+                return GroupExecHostResult {
+                    connection_id: conn.id,
+                    connection_name: conn.name.clone(),
+                    exit_code: -1,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    error: Some("session closed unexpectedly".into()),
+                };
+            }
+        }
     };
 
     match result {
@@ -820,10 +831,21 @@ async fn upload_to_host(
     // Upload
     let result = {
         let state = state.read().await;
-        let session = state.sessions.get(&conn.id).unwrap();
-        session
-            .upload_file(&PathBuf::from(local_path), remote_path)
-            .await
+        match state.sessions.get(&conn.id) {
+            Some(session) => {
+                session
+                    .upload_file(&PathBuf::from(local_path), remote_path)
+                    .await
+            }
+            None => {
+                return GroupUploadHostResult {
+                    connection_id: conn.id,
+                    connection_name: conn.name.clone(),
+                    bytes_transferred: 0,
+                    error: Some("session closed unexpectedly".into()),
+                };
+            }
+        }
     };
 
     match result {
@@ -882,7 +904,8 @@ async fn handle_tunnel_create(
     // Start tunnel
     let tunnel_handle = {
         let state = state.read().await;
-        let session = state.sessions.get(&conn.id).unwrap();
+        let session = state.sessions.get(&conn.id)
+            .ok_or_else(|| to_rpc_error(RivetError::SshConnectionFailed("session closed unexpectedly".into())))?;
         let handle_arc = session.handle_arc();
 
         rivet_ssh::tunnel::start_tunnel(handle_arc, conn.id, p.spec, None)

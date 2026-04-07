@@ -223,7 +223,8 @@ struct ConnectionListView: View {
             )
             await viewModel.loadConnections()
         } catch {
-            // Error handled by viewModel
+            viewModel.errorMessage = error.localizedDescription
+            viewModel.showError = true
         }
     }
 }

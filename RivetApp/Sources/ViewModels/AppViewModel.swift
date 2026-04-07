@@ -111,6 +111,8 @@ class AppViewModel: ObservableObject {
             try await client.callVoid(method: "vault.unlock", params: Params(password: password))
             appState = .ready
             await loadConnections()
+            await loadGroups()
+            await loadCredentials()
         } catch {
             showError(error)
         }
@@ -122,6 +124,8 @@ class AppViewModel: ObservableObject {
             try await client.callVoid(method: "vault.init", params: Params(password: password))
             appState = .ready
             await loadConnections()
+            await loadGroups()
+            await loadCredentials()
         } catch {
             showError(error)
         }

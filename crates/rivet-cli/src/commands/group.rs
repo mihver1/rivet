@@ -310,7 +310,11 @@ pub async fn exec(args: &[String]) -> Result<(), CliError> {
         exec_result.results.len()
     );
 
-    Ok(())
+    if fail_count > 0 {
+        Err(CliError::Other(format!("failed on {} host(s)", fail_count)))
+    } else {
+        Ok(())
+    }
 }
 
 pub async fn upload(args: &[String]) -> Result<(), CliError> {
@@ -368,7 +372,11 @@ pub async fn upload(args: &[String]) -> Result<(), CliError> {
         upload_result.results.len()
     );
 
-    Ok(())
+    if fail_count > 0 {
+        Err(CliError::Other(format!("failed on {} host(s)", fail_count)))
+    } else {
+        Ok(())
+    }
 }
 
 fn prompt(msg: &str) -> Result<String, CliError> {
