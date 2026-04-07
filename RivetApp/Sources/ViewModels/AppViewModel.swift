@@ -140,11 +140,16 @@ class AppViewModel: ObservableObject {
                     }
                 }
             }
+            // Timed out — kill the stuck daemon and read any stderr output
+            process.terminate()
+            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s for process to exit
+            let stderrData = stderrPipe.fileHandleForReading.availableData
+            let stderrText = String(data: stderrData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let message = stderrText.isEmpty
+                ? "rivetd started but socket connection timed out"
+                : "rivetd started but socket failed: \(stderrText.suffix(500))"
             appState = .daemonOffline
-            showError(DaemonClientError.rpcError(
-                code: -1,
-                message: "rivetd started but socket connection timed out"
-            ))
+            showError(DaemonClientError.rpcError(code: -1, message: message))
         } catch {
             appState = .daemonOffline
             showError(error)
