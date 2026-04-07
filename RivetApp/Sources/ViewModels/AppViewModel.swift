@@ -19,10 +19,16 @@ class AppViewModel: ObservableObject {
     @Published var credentials: [RivetCredential] = []
     @Published var showError = false
     @Published var errorMessage = ""
+    @Published var showRestartPrompt = false
+    @Published var isRestarting = false
     @Published var vaultStatus: VaultStatus?
     @Published var daemonStatus: DaemonStatus?
 
     private let client = DaemonClient()
+
+    private var rivetDir: String {
+        FileManager.default.homeDirectoryForCurrentUser.path + "/.rivet"
+    }
 
     func initialize() async {
         do {
@@ -111,8 +117,6 @@ class AppViewModel: ObservableObject {
             try await client.callVoid(method: "vault.unlock", params: Params(password: password))
             appState = .ready
             await loadConnections()
-            await loadGroups()
-            await loadCredentials()
         } catch {
             showError(error)
         }
@@ -124,8 +128,6 @@ class AppViewModel: ObservableObject {
             try await client.callVoid(method: "vault.init", params: Params(password: password))
             appState = .ready
             await loadConnections()
-            await loadGroups()
-            await loadCredentials()
         } catch {
             showError(error)
         }
@@ -194,35 +196,148 @@ class AppViewModel: ObservableObject {
         }
     }
 
-    func openInTerminal(_ connection: RivetConnection) {
-        // Build SSH command and open via .command file (no Apple Events needed)
-        var sshCmd = "ssh"
-        if connection.port != 22 {
-            sshCmd += " -p \(connection.port)"
-        }
-        if case .inline(let method) = connection.auth,
-           case .keyFile(let path, _) = method {
-            sshCmd += " -i \(path)"
-        }
-        sshCmd += " \(connection.username)@\(connection.host)"
+    @AppStorage("terminalEmulator") var terminalEmulator: String = TerminalEmulator.terminalApp.rawValue
+    @AppStorage("customTerminalCommand") var customTerminalCommand: String = ""
 
-        let scriptURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("rivet-ssh-\(UUID().uuidString).command")
-
-        let scriptContent = "#!/bin/bash\n\(sshCmd)\nrm -f \"\(scriptURL.path)\"\n"
-
+    func getConnectInfo(for connection: RivetConnection) async -> SshConnectInfo? {
+        struct Params: Encodable { let connection_id: UUID }
         do {
-            try scriptContent.write(to: scriptURL, atomically: true, encoding: .utf8)
-            try FileManager.default.setAttributes(
-                [.posixPermissions: 0o755],
-                ofItemAtPath: scriptURL.path
+            return try await client.call(
+                method: "ssh.connect_info",
+                params: Params(connection_id: connection.id)
             )
-            NSWorkspace.shared.open(scriptURL)
         } catch {
-            showError(DaemonClientError.rpcError(
-                code: -1,
-                message: "Failed to open terminal: \(error.localizedDescription)"
-            ))
+            showError(error)
+            return nil
+        }
+    }
+
+    func openInTerminal(_ connection: RivetConnection) async {
+        guard let info = await getConnectInfo(for: connection) else { return }
+        let emulator = TerminalEmulator(rawValue: terminalEmulator) ?? .terminalApp
+        switch emulator {
+        case .terminalApp: openInTerminalApp(info)
+        case .iterm2:      openInITerm2(info)
+        case .warp:        openInWarp(info)
+        case .ghostty:     openInGhostty(info)
+        case .axis:        openInAxis(info, connectionName: connection.name)
+        case .custom:      openWithCustomCommand(info)
+        }
+    }
+
+    // MARK: - Terminal Launchers
+
+    private func openInTerminalApp(_ info: SshConnectInfo) {
+        let sshCmd = info.sshCommand.replacingOccurrences(of: "\"", with: "\\\"")
+        let script = """
+        tell application "Terminal"
+            activate
+            do script "\(sshCmd)"
+        end tell
+        """
+        runAppleScript(script)
+    }
+
+    private func openInITerm2(_ info: SshConnectInfo) {
+        let sshCmd = info.sshCommand.replacingOccurrences(of: "\"", with: "\\\"")
+        let script = """
+        tell application "iTerm"
+            activate
+            create window with default profile command "\(sshCmd)"
+        end tell
+        """
+        runAppleScript(script)
+    }
+
+    private func openInWarp(_ info: SshConnectInfo) {
+        let sshCmd = info.sshCommand.replacingOccurrences(of: "\"", with: "\\\"")
+        let script = """
+        tell application "Warp"
+            activate
+        end tell
+        delay 0.5
+        tell application "System Events"
+            tell process "Warp"
+                keystroke "t" using command down
+                delay 0.3
+                keystroke "\(sshCmd)"
+                key code 36
+            end tell
+        end tell
+        """
+        runAppleScript(script)
+    }
+
+    private func openInGhostty(_ info: SshConnectInfo) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = ["-a", "Ghostty", "--args", "-e"] + info.sshArgv
+        do {
+            try process.run()
+        } catch {
+            showError(DaemonClientError.rpcError(code: -1, message: "Failed to launch Ghostty: \(error)"))
+        }
+    }
+
+    private func openInAxis(_ info: SshConnectInfo, connectionName: String) {
+        let argv = info.sshArgv
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: argv),
+              let jsonStr = String(data: jsonData, encoding: .utf8) else {
+            showError(DaemonClientError.rpcError(code: -1, message: "Failed to serialize SSH argv"))
+            return
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = [
+            "axis-cli", "raw", "terminal.ensure",
+            """
+            {"workdesk_id":"rivet","surface_id":1,"kind":"shell","title":"SSH: \(connectionName)","cols":120,"rows":40,"command":\(jsonStr)}
+            """
+        ]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+        } catch {
+            showError(DaemonClientError.rpcError(code: -1, message: "Failed to launch axis-cli: \(error)"))
+        }
+    }
+
+    private func openWithCustomCommand(_ info: SshConnectInfo) {
+        var cmd = customTerminalCommand
+        cmd = cmd.replacingOccurrences(of: "{SSH_CMD}", with: info.sshCommand)
+        cmd = cmd.replacingOccurrences(of: "{HOST}", with: info.host)
+        cmd = cmd.replacingOccurrences(of: "{PORT}", with: "\(info.port)")
+        cmd = cmd.replacingOccurrences(of: "{USER}", with: info.username)
+
+        guard !cmd.isEmpty else {
+            showError(DaemonClientError.rpcError(code: -1, message: "Custom terminal command is empty. Configure it in Settings."))
+            return
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", cmd]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+        } catch {
+            showError(DaemonClientError.rpcError(code: -1, message: "Failed to run custom command: \(error)"))
+        }
+    }
+
+    private func runAppleScript(_ source: String) {
+        if let appleScript = NSAppleScript(source: source) {
+            var error: NSDictionary?
+            appleScript.executeAndReturnError(&error)
+            if let error = error {
+                showError(DaemonClientError.rpcError(
+                    code: -1,
+                    message: "AppleScript error: \(error)"
+                ))
+            }
         }
     }
 
@@ -372,8 +487,55 @@ class AppViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Daemon Lifecycle
+
+    /// Stop the running daemon by reading its PID file and sending SIGTERM.
+    func stopDaemon() async {
+        await client.disconnect()
+
+        let pidPath = rivetDir + "/rivetd.pid"
+        let sockPath = rivetDir + "/rivet.sock"
+
+        // Read PID and kill
+        if let pidStr = try? String(contentsOfFile: pidPath, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
+           let pid = pid_t(pidStr) {
+            kill(pid, SIGTERM)
+
+            // Wait up to 3 seconds for socket to disappear
+            for _ in 0..<30 {
+                if !FileManager.default.fileExists(atPath: sockPath) { break }
+                try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+            }
+        }
+
+        // Clean up stale files
+        try? FileManager.default.removeItem(atPath: sockPath)
+        try? FileManager.default.removeItem(atPath: pidPath)
+    }
+
+    /// Restart the daemon: stop current instance, launch new binary, reconnect.
+    func restartDaemon() async {
+        isRestarting = true
+        print("[AppViewModel] Restarting daemon due to contract mismatch...")
+
+        await stopDaemon()
+
+        // Brief pause to ensure port/socket is fully released
+        try? await Task.sleep(nanoseconds: 300_000_000) // 300ms
+
+        await startDaemon()
+        isRestarting = false
+    }
+
+    // MARK: - Error Handling
+
     private func showError(_ error: Error) {
-        errorMessage = error.localizedDescription
-        showError = true
+        if error.isContractMismatch {
+            print("[AppViewModel] Contract mismatch detected: \(error.localizedDescription)")
+            showRestartPrompt = true
+        } else {
+            errorMessage = error.localizedDescription
+            showError = true
+        }
     }
 }

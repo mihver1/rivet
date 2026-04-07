@@ -202,4 +202,42 @@ enum DaemonClientError: LocalizedError {
             return message
         }
     }
+
+    /// Whether this error indicates the daemon is running a different protocol version
+    /// (e.g., old binary that doesn't understand new methods or params).
+    var isContractMismatch: Bool {
+        switch self {
+        case .rpcError(let code, let message):
+            // -32601 = Method not found, -32602 = Invalid params
+            if code == -32601 || code == -32602 { return true }
+            // Serde deserialization errors from the daemon
+            let lower = message.lowercased()
+            let mismatchPatterns = [
+                "unknown field", "missing field", "invalid type",
+                "unknown variant", "deserialize", "expected ",
+                "unrecognized field", "no method"
+            ]
+            return mismatchPatterns.contains { lower.contains($0) }
+        case .invalidResponse:
+            // Response couldn't be parsed — possible protocol change
+            return true
+        default:
+            return false
+        }
+    }
+}
+
+extension Error {
+    /// Check if this error (possibly wrapped) indicates a daemon contract mismatch.
+    var isContractMismatch: Bool {
+        if let clientError = self as? DaemonClientError {
+            return clientError.isContractMismatch
+        }
+        // Also catch Swift decoding errors from the client side
+        // (daemon sent a valid response, but the shape doesn't match our Swift model)
+        if self is DecodingError {
+            return true
+        }
+        return false
+    }
 }

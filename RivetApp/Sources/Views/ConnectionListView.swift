@@ -45,7 +45,7 @@ struct ConnectionListView: View {
                             .tag(SidebarSelection.connection(conn))
                             .contextMenu {
                                 Button("Open in Terminal") {
-                                    viewModel.openInTerminal(conn)
+                                    Task { await viewModel.openInTerminal(conn) }
                                 }
                                 Button("Quick Command...") {
                                     sidebarSelection = .connection(conn)

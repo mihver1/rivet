@@ -12,6 +12,10 @@ struct RivetApp: App {
         }
         .windowStyle(.titleBar)
         .defaultSize(width: 900, height: 600)
+
+        Settings {
+            SettingsView()
+        }
     }
 }
 
@@ -42,6 +46,34 @@ struct ContentView: View {
             Button("OK") {}
         } message: {
             Text(viewModel.errorMessage)
+        }
+        .alert("Daemon Version Mismatch", isPresented: $viewModel.showRestartPrompt) {
+            Button("Restart Daemon") {
+                Task {
+                    await viewModel.restartDaemon()
+                }
+            }
+            .keyboardShortcut(.defaultAction)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The daemon is running an outdated version that doesn't match this app. Restart it to apply the latest changes?")
+        }
+        .overlay {
+            if viewModel.isRestarting {
+                ZStack {
+                    Color.black.opacity(0.3)
+                    VStack(spacing: 14) {
+                        ProgressView()
+                            .controlSize(.large)
+                        Text("Restarting daemon…")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                    }
+                    .padding(30)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                }
+                .ignoresSafeArea()
+            }
         }
     }
 }

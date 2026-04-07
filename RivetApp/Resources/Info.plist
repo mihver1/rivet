@@ -9,7 +9,7 @@
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.artel.rivet</string>
+	<string>tech.artelproject.rivet</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
@@ -30,6 +30,8 @@
 	<string>Copyright © 2026 Artel. All rights reserved.</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Rivet needs to control terminal applications to open SSH connections.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

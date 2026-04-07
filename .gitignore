@@ -4,6 +4,7 @@
 Cargo.lock
 
 # Swift
+build/
 .build/
 .swiftpm/
 DerivedData/

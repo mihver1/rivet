@@ -3,7 +3,8 @@ set -euo pipefail
 
 # ── Config ──────────────────────────────────────────────────────────
 APP_NAME="Rivet"
-BUNDLE_ID="com.artel.rivet"
+BUNDLE_ID="tech.artelproject.rivet"
+TEAM_ID="6DR98YW3PY"
 VERSION="0.1.0"
 BUILD_NUMBER="1"
 
@@ -125,15 +126,10 @@ generate_icon() {
     done
 
     # macOS iconset naming convention
-    cp "$iconset/icon_16x16.png"    "$iconset/icon_16x16.png"
     cp "$iconset/icon_32x32.png"    "$iconset/icon_16x16@2x.png"
-    cp "$iconset/icon_32x32.png"    "$iconset/icon_32x32.png"
     cp "$iconset/icon_64x64.png"    "$iconset/icon_32x32@2x.png"
-    cp "$iconset/icon_128x128.png"  "$iconset/icon_128x128.png"
     cp "$iconset/icon_256x256.png"  "$iconset/icon_128x128@2x.png"
-    cp "$iconset/icon_256x256.png"  "$iconset/icon_256x256.png"
     cp "$iconset/icon_512x512.png"  "$iconset/icon_256x256@2x.png"
-    cp "$iconset/icon_512x512.png"  "$iconset/icon_512x512.png"
     cp "$iconset/icon_1024x1024.png" "$iconset/icon_512x512@2x.png"
 
     # Remove non-standard names

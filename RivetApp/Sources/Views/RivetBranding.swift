@@ -103,6 +103,8 @@ struct RivetBadge: View {
 }
 
 struct RivetBrandLockup: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     var badgeSize: CGFloat = 60
     var showsTagline = true
 
@@ -114,44 +116,59 @@ struct RivetBrandLockup: View {
                 Text("RIVET")
                     .font(.system(size: badgeSize * 0.56, weight: .black, design: .rounded))
                     .tracking(badgeSize * 0.045)
-                    .foregroundStyle(RivetBrandPalette.graphite)
+                    .foregroundStyle(wordmarkColor)
 
                 if showsTagline {
                     Text("SECURE SSH CONNECTIONS")
                         .font(.system(size: badgeSize * 0.15, weight: .semibold, design: .rounded))
                         .tracking(badgeSize * 0.04)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(taglineColor)
                 }
             }
         }
-        .fixedSize(horizontal: false, vertical: true)
+        .fixedSize(horizontal: true, vertical: true)
+    }
+
+    private var wordmarkColor: Color {
+        colorScheme == .dark ? RivetBrandPalette.steel : RivetBrandPalette.graphite
+    }
+
+    private var taglineColor: Color {
+        colorScheme == .dark ? RivetBrandPalette.steelDark.opacity(0.92) : .secondary
     }
 }
 
 struct RivetSidebarHeader: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
-        HStack(spacing: 12) {
+        ViewThatFits(in: .horizontal) {
+            RivetBrandLockup(badgeSize: 44, showsTagline: true)
+            RivetBrandLockup(badgeSize: 44, showsTagline: false)
             RivetBadge(size: 44)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("RIVET")
-                    .font(.system(size: 20, weight: .black, design: .rounded))
-                    .tracking(1.8)
-                    .foregroundStyle(RivetBrandPalette.graphite)
-
-                Text("Secure SSH connections")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .tracking(1.2)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.regularMaterial)
+                .fill(headerBackground)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(borderColor, lineWidth: 1)
+                )
         )
+    }
+
+    private var headerBackground: some ShapeStyle {
+        colorScheme == .dark
+            ? AnyShapeStyle(RivetBrandPalette.navy.opacity(0.34))
+            : AnyShapeStyle(.regularMaterial)
+    }
+
+    private var borderColor: Color {
+        colorScheme == .dark
+            ? Color.white.opacity(0.08)
+            : RivetBrandPalette.graphite.opacity(0.06)
     }
 }
 

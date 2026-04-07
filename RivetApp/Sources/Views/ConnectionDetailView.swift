@@ -24,7 +24,7 @@ struct ConnectionDetailView: View {
 
                     HStack(spacing: 8) {
                         Button {
-                            viewModel.openInTerminal(connection)
+                            Task { await viewModel.openInTerminal(connection) }
                         } label: {
                             Label("Open in Terminal", systemImage: "terminal")
                         }
@@ -109,17 +109,11 @@ struct ConnectionDetailView: View {
     }
 
     private func copySshCommand() {
-        var cmd = "ssh"
-        if connection.port != 22 {
-            cmd += " -p \(connection.port)"
+        Task {
+            if let info = await viewModel.getConnectInfo(for: connection) {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(info.sshCommand, forType: .string)
+            }
         }
-        if case .inline(let method) = connection.auth,
-           case .keyFile(let path, _) = method {
-            cmd += " -i \(path)"
-        }
-        cmd += " \(connection.username)@\(connection.host)"
-
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(cmd, forType: .string)
     }
 }
