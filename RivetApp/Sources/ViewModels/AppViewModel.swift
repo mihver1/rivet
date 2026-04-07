@@ -195,7 +195,7 @@ class AppViewModel: ObservableObject {
     }
 
     func openInTerminal(_ connection: RivetConnection) {
-        // Build SSH command and open in Terminal.app
+        // Build SSH command and open via .command file (no Apple Events needed)
         var sshCmd = "ssh"
         if connection.port != 22 {
             sshCmd += " -p \(connection.port)"
@@ -206,22 +206,23 @@ class AppViewModel: ObservableObject {
         }
         sshCmd += " \(connection.username)@\(connection.host)"
 
-        let script = """
-        tell application "Terminal"
-            activate
-            do script "\(sshCmd)"
-        end tell
-        """
+        let scriptURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("rivet-ssh-\(UUID().uuidString).command")
 
-        if let appleScript = NSAppleScript(source: script) {
-            var error: NSDictionary?
-            appleScript.executeAndReturnError(&error)
-            if let error = error {
-                showError(DaemonClientError.rpcError(
-                    code: -1,
-                    message: "AppleScript error: \(error)"
-                ))
-            }
+        let scriptContent = "#!/bin/bash\n\(sshCmd)\nrm -f \"\(scriptURL.path)\"\n"
+
+        do {
+            try scriptContent.write(to: scriptURL, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o755],
+                ofItemAtPath: scriptURL.path
+            )
+            NSWorkspace.shared.open(scriptURL)
+        } catch {
+            showError(DaemonClientError.rpcError(
+                code: -1,
+                message: "Failed to open terminal: \(error.localizedDescription)"
+            ))
         }
     }
 
