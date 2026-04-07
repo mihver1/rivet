@@ -53,25 +53,34 @@ async fn main() {
 
     let sock = socket_path();
 
-    // Spawn the server
+    // Run the server — exit if it fails to start or if we receive a signal
     let server_state = state.clone();
     let server_handle = tokio::spawn(async move {
-        if let Err(e) = server::run_server(&sock, server_state).await {
-            error!(error = %e, "server error");
-        }
+        server::run_server(&sock, server_state).await
     });
 
     info!("rivetd ready");
 
-    // Wait for shutdown signal
-    shutdown_signal().await;
+    tokio::select! {
+        result = server_handle => {
+            match result {
+                Ok(Ok(())) => info!("server exited cleanly"),
+                Ok(Err(e)) => {
+                    error!(error = %e, "server failed");
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    error!(error = %e, "server task panicked");
+                    std::process::exit(1);
+                }
+            }
+        }
+        _ = shutdown_signal() => {}
+    }
 
     info!("shutting down...");
 
-    // Cleanup
-    server_handle.abort();
-
-    // Disconnect all SSH sessions
+    // Cleanup — disconnect all SSH sessions
     {
         let mut state = state.write().await;
         for (_id, session) in state.sessions.drain() {
